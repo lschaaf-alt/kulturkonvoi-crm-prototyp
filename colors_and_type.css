@@ -1,0 +1,313 @@
+/* ═══════════════════════════════════════════════════════════════
+   EnergyFarm Governance Design System
+   colors_and_type.css — Core visual foundation
+   Source: Governance-SCS/frontend/app/globals.css + design-system.md
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Webfonts loaded from Google Fonts CDN — the real product uses
+   next/font/google to self-host DM Sans + JetBrains Mono. For
+   design-artifact use, CDN is fine. */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ─── Colors ─────────────────────────────────────────────── */
+
+  /* Surfaces */
+  --cream:       #f4f1ea;  /* primary background */
+  --cream-warm:  #eae5d9;  /* warm accent surface, tab bars */
+  --paper:       #faf8f4;  /* panel / card surface, light text on dark bg */
+
+  /* Ink (text on light surface) */
+  --ink:         #1a1a18;  /* primary text */
+  --ink-soft:    #3d3b36;  /* secondary text */
+  --ink-muted:   #8a8578;  /* tertiary, placeholders */
+  --ink-faint:   #b8b2a6;  /* disabled, inactive */
+
+  /* Forest = Erzeuger / Einspeiser (producer, positive) */
+  --forest:       #2d5a3d;
+  --forest-deep:  #1e3f2b;
+  --forest-light: #5a9b6e;
+  --forest-bg:    rgba(45, 90, 61, 0.07);
+  --forest-glass: rgba(45, 90, 61, 0.05);
+
+  /* Copper = Verbraucher (consumer, warnings) */
+  --copper:       #b8602a;
+  --copper-deep:  #8f4a1e;
+  --copper-light: #d4834e;
+  --copper-bg:    rgba(184, 96, 42, 0.07);
+  --copper-glass: rgba(184, 96, 42, 0.05);
+
+  /* Earth — neutral warm brown */
+  --earth:       #6b5c4a;
+  --earth-light: #9a8b78;
+
+  /* Signal — status codes */
+  --signal-on:     #4a7c5c;  /* aktiv */
+  --signal-warn:   #c4873b;  /* wartung */
+  --signal-warn-bg: rgba(196, 135, 59, 0.07);
+  --signal-off:    #a04040;  /* defekt */
+  --signal-defekt: #8b3a3a;  /* darker defekt */
+
+  /* Borders */
+  --border:       rgba(180, 172, 158, 0.4);
+  --border-solid: #d5cfc3;
+  --border-light: rgba(200, 194, 182, 0.3);
+
+  /* Glass surfaces */
+  --glass-bg:      rgba(250, 248, 244, 0.72);
+  --glass-strong:  rgba(250, 248, 244, 0.88);
+  --glass-subtle:  rgba(250, 248, 244, 0.5);
+  --glass-border:  rgba(255, 255, 255, 0.12);
+
+  /* ─── Semantic colour aliases (USE THESE in components) ───── */
+  --erzeuger:       var(--forest);
+  --verbraucher:    var(--copper);
+  --kein-wert:      var(--ink-muted);
+  --inaktiv:        var(--ink-faint);
+  --status-aktiv:   var(--signal-on);
+  --status-wartung: var(--signal-warn);
+  --status-defekt:  var(--signal-off);
+  --aktion-primaer: var(--forest);
+  --aktion-gefahr:  var(--signal-off);
+
+  /* Convenience foreground/background aliases for cross-system use */
+  --bg-1: var(--cream);
+  --bg-2: var(--cream-warm);
+  --bg-3: var(--paper);
+  --fg-1: var(--ink);
+  --fg-2: var(--ink-soft);
+  --fg-3: var(--ink-muted);
+  --fg-4: var(--ink-faint);
+
+  /* ─── Typography ─────────────────────────────────────────── */
+  --font-ui:   'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  --font-serif-display: var(--font-ui); /* no serif in system */
+
+  /* Scale (px) — tight, ISO-inspired */
+  --fs-2xs:     9px;
+  --fs-micro:   10px;
+  --fs-xs:      11px;
+  --fs-caption: 12px;
+  --fs-sm:      13px;
+  --fs-meta:    14px;
+  --fs-base:    15px;
+  --fs-lg:      18px;
+  --fs-xl:      22px;
+  --fs-2xl:     26px;
+  --fs-3xl:     34px;
+  --fs-4xl:     44px;
+
+  --lh-tight:   1.1;
+  --lh-snug:    1.2;
+  --lh-heading: 1.3;
+  --lh-compact: 1.4;
+  --lh-body:    1.5;
+
+  --ls-tight:   -0.3px;
+  --ls-normal:  0;
+  --ls-wide:    0.4px;
+  --ls-wider:   0.8px;
+  --ls-widest:  1px;
+
+  /* ─── Radii, shadows, depth ──────────────────────────────── */
+  --radius:     10px;
+  --radius-sm:  6px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+  --radius-pill: 999px;
+
+  --shadow-glass: 0 4px 24px rgba(26, 26, 24, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  --shadow-soft:  0 2px 10px rgba(26, 26, 24, 0.05);
+  --shadow-lift:  0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-modal: 0 20px 60px rgba(26, 26, 24, 0.25);
+
+  /* ─── Spacing (8px base, with half-steps for type) ─────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ─── Motion ─────────────────────────────────────────────── */
+  --easing-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --easing-enter:    cubic-bezier(0, 0, 0.2, 1);
+  --easing-exit:     cubic-bezier(0.4, 0, 1, 1);
+  --dur-fast:   150ms;
+  --dur-base:   220ms;
+  --dur-slow:   300ms;
+  --dur-panel:  300ms;
+
+  /* ─── Canvas (EnPI blueprint SVG) font sizes ─────────────── */
+  --canvas-fs-hub-label:  12px;
+  --canvas-fs-hub-value:  20px;
+  --canvas-fs-title:      18px;
+  --canvas-fs-subtitle:   13px;
+  --canvas-fs-value-lg:   15px;
+  --canvas-fs-value:      14px;
+  --canvas-fs-meta:       12px;
+  --canvas-fs-secondary:  11px;
+  --canvas-fs-badge:      10px;
+}
+
+/* ─── Base element styles (semantic) ────────────────────────── */
+
+html { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+
+body {
+  margin: 0;
+  background-color: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Optional fractalNoise grain overlay — add class="scs-grain" to body */
+body.scs-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.028;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Ambient radial tint for hero / dashboard backgrounds */
+.scs-background {
+  background-color: var(--cream);
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(45, 90, 61, 0.04), transparent 60%),
+    radial-gradient(ellipse at 80% 50%, rgba(184, 96, 42, 0.04), transparent 60%);
+}
+
+/* Type — semantic */
+h1, .h1 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-3xl);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--ls-tight);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+h2, .h2 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-2xl);
+  line-height: var(--lh-heading);
+  letter-spacing: var(--ls-tight);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+h3, .h3 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xl);
+  line-height: var(--lh-heading);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+h4, .h4 {
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-heading);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+p {
+  font-family: var(--font-ui);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-body);
+  color: var(--ink-soft);
+  margin: 0;
+}
+small, .caption {
+  font-size: var(--fs-caption);
+  color: var(--ink-muted);
+  letter-spacing: var(--ls-wide);
+}
+
+/* Uppercase SCS label — the signature label style */
+.label, .uppercase-label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  color: var(--ink-muted);
+}
+
+code, .mono, .mono-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.mono-value {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+/* ─── Glass utilities ───────────────────────────────────────── */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+}
+.glass-strong {
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border);
+}
+.glass-subtle {
+  background: var(--glass-subtle);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-light);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .glass        { background: rgba(250, 248, 244, 0.92); }
+  .glass-strong { background: rgba(250, 248, 244, 0.95); }
+  .glass-subtle { background: rgba(250, 248, 244, 0.92); }
+}
+
+/* ─── Keyframes / animations ────────────────────────────────── */
+@keyframes pulse-halo {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74, 124, 92, 0.4); }
+  50%      { box-shadow: 0 0 8px 3px rgba(74, 124, 92, 0.25); }
+}
+@keyframes panel-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.pulse-halo   { animation: pulse-halo 2.5s ease-in-out infinite; }
+.panel-slide  { animation: panel-slide-in var(--dur-panel) var(--easing-standard); }
+
+/* ─── Print hygiene ────────────────────────────────────────── */
+@media print {
+  body { background: var(--paper) !important; }
+  .glass, .glass-strong, .glass-subtle {
+    background: var(--paper) !important;
+    backdrop-filter: none !important;
+    border-color: var(--border-solid) !important;
+    box-shadow: none !important;
+  }
+  .no-print { display: none !important; }
+}

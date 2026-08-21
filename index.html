@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>KulturKonvoi CRM</title>
+<meta name="theme-color" content="#2d5a3d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="KK CRM">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png">
+<link rel="stylesheet" href="./colors_and_type.css">
+<style>
+  html, body { height: 100%; overscroll-behavior: none; }
+  body { -webkit-tap-highlight-color: transparent; }
+  #root { min-height: 100dvh; display: flex; flex-direction: column; }
+  button { font: inherit; }
+  .scs-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#8a8578}
+  @keyframes rec-halo{0%,100%{box-shadow:0 0 0 0 rgba(160,64,64,.45)}50%{box-shadow:0 0 0 14px rgba(160,64,64,0)}}
+  @keyframes live-dot{0%,100%{opacity:1}50%{opacity:.35}}
+  @keyframes wave{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+  .kk-card{display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-left:4px solid var(--accent, #2d5a3d);text-align:left;cursor:pointer}
+  .kk-card:active{background:#eae5d9}
+  .kk-back{display:flex;align-items:center;gap:8px;cursor:pointer;color:#8a8578;font-size:14px;background:none;border:none;padding:0}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  "use strict";
+
+  var ACC = { belegt: '#2d5a3d', offen: '#c4873b', vorschlag: '#b8602a', faint: '#b8b2a6' };
+
+  var state = {
+    route: 'home',
+    rec: 'done',
+    sec: 38,
+    fields: [
+      { label: 'Name', value: 'Dr. Katrin Behrens', quelle: 'IMPRESSUM · 21.08.2026', kind: 'belegt', status: 'confirmed' },
+      { label: 'Organisation', value: 'Stadtwerke Landsberg', quelle: 'WEBSITE · 21.08.2026', kind: 'belegt', status: 'confirmed' },
+      { label: 'Funktion', value: 'Leitung Kommunikation', quelle: 'LINKEDIN', kind: 'offen', warn: true, status: 'open' },
+      { label: 'Herkunft / Vermittler', value: 'über Michael Skurykhin, Surprise Surprise', quelle: 'SPRACHNOTIZ', kind: 'belegt', status: 'open' },
+      { label: 'Anschluss / Mehrwert', value: 'Möglicher VoiceOn-Gastgeber zum Thema Regionalstrom; Kultur.Konvoi bringt Bühne und Kommunen-Netzwerk.', quelle: 'CLAUDE-VORSCHLAG', kind: 'vorschlag', status: 'open' },
+      { label: 'Wiedervorlage', value: '08.09.2026 — meldet sich nach dem Urlaub', quelle: 'SPRACHNOTIZ', kind: 'belegt', status: 'open' }
+    ],
+    stack: [
+      { name: 'Elena Wirth', note: 'Kulturamt, will Programmheft-Kooperation', rolle: 'LEAD', tint: '#2d5a3d' },
+      { name: 'Tobias Renner', note: 'Fotograf, fragt nach Foto-Freigabe', rolle: 'PARTNER', tint: '#6b5c4a' },
+      { name: 'Sabine Kolb', note: 'ZONE3000, nicht taggen', rolle: 'SPONSOR', tint: '#b8602a' }
+    ],
+    draftIdx: 0,
+    rolle: 'Lead',
+    notifs: [
+      { id: 'wv', time: 'jetzt', title: 'Wiedervorlage fällig — Dr. Katrin Behrens', body: 'Rückmeldung nach dem Urlaub zugesagt. Letzte Interaktion 21.08.2026.', primary: 'Briefing öffnen' },
+      { id: 'mail', time: 'vor 12 Min', title: '3 Follow-up-Mails warten auf Freigabe', body: 'Entwürfe aus Surprise Surprise, Landsberg. Kein Versand ohne Freigabe.', primary: 'Prüfen' },
+      { id: 'lauf', time: '08:00', title: 'Wochenlauf', body: '5 Wiedervorlagen fällig, 2 überfällig, 1 mögliche Dublette.', primary: 'Liste öffnen' }
+    ],
+    tone: 'Knapp',
+    activeBlocks: ['Bezug aufs Gespräch', 'VoiceOn-Anschluss'],
+    mail: 'draft',
+    mailIdx: 1,
+    settings: [
+      { id: 's1', title: 'Wiedervorlage fällig', hint: 'Am Fälligkeitstag, 08:00 — und erneut bei Überschreitung.', on: true },
+      { id: 's2', title: 'Mail-Entwurf zur Freigabe', hint: 'Sobald Claude einen Follow-up-Entwurf fertig hat.', on: true },
+      { id: 's3', title: 'Neue Interaktion protokolliert', hint: 'Stille Aktivität im Team, ohne Push.', on: false },
+      { id: 's4', title: 'Veraltete Stände (> 6 Monate)', hint: 'Refresh-Kandidaten bei aktiven Partnern.', on: true }
+    ]
+  };
+
+  var recTimer = null;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function backBar(title) {
+    return '' +
+      '<div style="padding:calc(env(safe-area-inset-top,20px) + 14px) 18px 14px;background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-bottom:1px solid rgba(180,172,158,.4);display:flex;align-items:center;gap:10px">' +
+        '<button class="kk-back" onclick="App.nav(\'home\')">‹ Übersicht</button>' +
+        '<span class="scs-lbl" style="margin-left:auto">' + esc(title) + '</span>' +
+      '</div>';
+  }
+
+  var MENU = [
+    { id: '1a', title: 'Strukturiertes Formular', desc: 'Kontakt erfassen — nah am Sheet-Schema, alles sichtbar.', accent: '#2d5a3d' },
+    { id: '1b', title: 'Sprachnotiz → Diff-Bestätigung', desc: 'Reden statt tippen, jedes Feld einzeln bestätigen.', accent: '#b8602a' },
+    { id: '1c', title: 'Event-Modus: Stapel', desc: 'Schnellerfassung auf dem Event, Nachlese später.', accent: '#1e3f2b' },
+    { id: '2a', title: 'Push auf dem Lockscreen', desc: 'Fällige Wiedervorlage, Mail-Freigabe, Wochenlauf.', accent: '#1e3f2b' },
+    { id: '2b', title: 'Follow-up-Mail zur Freigabe', desc: 'Entwurf prüfen, Tonfall wählen, freigeben und senden.', accent: '#2d5a3d' },
+    { id: '2c', title: 'Regeln für Benachrichtigungen', desc: 'Anlässe, Ruhezeiten — Auto-Versand bleibt gesperrt.', accent: '#6b5c4a' }
+  ];
+
+  function screenHome() {
+    var cards = MENU.map(function (m) {
+      return '' +
+        '<div class="kk-card" style="--accent:' + m.accent + '" onclick="App.nav(\'' + m.id + '\')">' +
+          '<div style="display:flex;align-items:baseline;gap:8px">' +
+            '<span style="font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a18;border-radius:5px">' + m.id + '</span>' +
+            '<span style="font-size:15px;font-weight:600;color:#1a1a18">' + esc(m.title) + '</span>' +
+          '</div>' +
+          '<div style="font-size:12.5px;line-height:1.5;color:#8a8578">' + esc(m.desc) + '</div>' +
+        '</div>';
+    }).join('');
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        '<div style="padding:calc(env(safe-area-inset-top,20px) + 22px) 20px 18px">' +
+          '<div class="scs-lbl">Kultur.Konvoi</div>' +
+          '<div style="font-size:26px;font-weight:600;color:#1a1a18;letter-spacing:-.3px;margin-top:4px">CRM-Prototyp</div>' +
+          '<div style="font-size:13px;color:#8a8578;margin-top:6px;line-height:1.5">Prototyp ohne Backend — die Interaktionen sind echt, die Daten sind Beispiel.</div>' +
+        '</div>' +
+        '<div style="flex:1;padding:0 20px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:12px">' + cards + '</div>' +
+      '</div>';
+  }
+
+  function screen1a() {
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        backBar('Neuer Kontakt') +
+        '<div style="flex:1;padding:16px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
+          '<div style="display:flex;gap:6px">' +
+            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:#2d5a3d;color:#faf8f4;font-size:11px;font-weight:600">Visitenkarte</div>' +
+            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:rgba(250,248,244,.7);border:1px solid rgba(180,172,158,.4);color:#3d3b36;font-size:11px">Sprachnotiz</div>' +
+            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:rgba(250,248,244,.7);border:1px solid rgba(180,172,158,.4);color:#3d3b36;font-size:11px">Manuell</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
+            '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">FOTO<br>VK</div>' +
+            '<div style="flex:1"><div class="scs-lbl">Erkannt aus Visitenkarte</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">8 Felder · 21.08.2026 19:42</div></div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+            '<div class="scs-lbl">Name</div><div style="font-size:17px;font-weight:600;color:#1a1a18;margin-top:4px">Dr. Katrin Behrens</div>' +
+            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578;margin-top:6px">QUELLE: IMPRESSUM · 21.08.2026</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:10px">' +
+            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Organisation</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Stadtwerke Landsberg</div></div>' +
+            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Funktion</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Leitung Kommunikation</div></div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+            '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Anschluss / Mehrwert</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#b8602a;letter-spacing:.5px">PFLICHT</span></div>' +
+            '<div style="font-size:14px;color:#8a8578;margin-top:6px;line-height:1.45;font-style:italic">Was kann sie für Kultur.Konvoi bedeuten — und umgekehrt?</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' +
+              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">VoiceOn-Gastgeber</span>' +
+              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">Netzwerk Kommunen</span>' +
+              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">Sponsoring-Lead</span>' +
+            '</div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center"><div class="scs-lbl">Freigaben</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">NICHT ABLEITBAR</span></div>' +
+            '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Nennung<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Tagging<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Foto / Film<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+            '</div>' +
+            '<div style="font-size:11px;color:#8a8578;line-height:1.45;margin-top:10px">Freigaben ändern sich nur durch dokumentierte Bestätigung der Person.</div>' +
+          '</div>' +
+          '<div style="display:flex;gap:10px">' +
+            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Konfidenz</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="width:8px;height:8px;border-radius:999px;background:#c4873b;display:inline-block"></span><span style="font-size:13px;color:#1a1a18">teilweise offen</span></div></div>' +
+            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Wiedervorlage</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18;margin-top:6px">08.09.2026</div></div>' +
+          '</div>' +
+          '<div style="margin-top:6px;padding:14px;text-align:center;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">Kontakt anlegen</div>' +
+          '<div style="text-align:center;font-size:11px;color:#8a8578;margin-top:2px">Interaktion wird mit protokolliert</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function waveformHtml(recording) {
+    var bars = '';
+    for (var i = 0; i < 26; i++) {
+      var h = 6 + ((i * 7) % 5) * 6 + (i % 3) * 4;
+      bars += '<span style="flex:1;min-width:0;border-radius:2px;height:' + h + 'px;background:' + (recording ? '#a04040' : '#b8b2a6') + ';transform-origin:bottom;animation:' + (recording ? ('wave 1.1s ease-in-out ' + ((i % 6) * 0.09) + 's infinite') : 'none') + ';opacity:' + (recording ? 1 : 0.55) + '"></span>';
+    }
+    return '<div style="display:flex;align-items:flex-end;gap:3px;height:34px;width:100%">' + bars + '</div>';
+  }
+
+  function screen1b() {
+    var recording = state.rec === 'recording';
+    var confirmed = state.fields.filter(function (f) { return f.status === 'confirmed'; }).length;
+    var countLabel = confirmed + ' von ' + state.fields.length;
+    var timer = String(Math.floor(state.sec / 60)).padStart(2, '0') + ':' + String(state.sec % 60).padStart(2, '0');
+
+    var fieldsHtml = state.fields.map(function (f, i) {
+      var accent = f.status === 'rejected' ? ACC.faint : ACC[f.kind];
+      var op = f.status === 'rejected' ? 0.45 : 1;
+      var warn = !!f.warn && f.status !== 'rejected';
+      var actions = '';
+      if (f.status === 'open') {
+        actions = '<div style="display:flex;gap:6px;flex-shrink:0">' +
+          '<button onclick="App.setStatus(' + i + ',\'rejected\')" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#8a8578;font-size:14px;cursor:pointer">✕</button>' +
+          '<button onclick="App.setStatus(' + i + ',\'confirmed\')" style="width:34px;height:34px;border-radius:8px;border:none;background:#2d5a3d;color:#faf8f4;font-size:15px;cursor:pointer">✓</button>' +
+        '</div>';
+      } else if (f.status === 'confirmed') {
+        actions = '<div style="width:34px;height:34px;border-radius:8px;background:rgba(45,90,61,.07);color:#2d5a3d;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">✓</div>';
+      } else if (f.status === 'rejected') {
+        actions = '<button onclick="App.setStatus(' + i + ',\'open\')" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#8a8578;font-size:14px;cursor:pointer;flex-shrink:0">↺</button>';
+      }
+      return '' +
+        '<div style="display:flex;gap:11px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:flex-start;opacity:' + op + '">' +
+          '<div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:' + accent + '"></div>' +
+          '<div style="flex:1;min-width:0">' +
+            '<div class="scs-lbl">' + esc(f.label) + '</div>' +
+            '<div style="font-size:14px;line-height:1.4;color:#1a1a18;margin-top:3px">' + esc(f.value) + '</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">' +
+              '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;color:#8a8578;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 7px">' + esc(f.quelle) + '</span>' +
+              (warn ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#c4873b;letter-spacing:.5px">TEILWEISE OFFEN</span>' : '') +
+            '</div>' +
+          '</div>' +
+          actions +
+        '</div>';
+    }).join('');
+
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        backBar('Sprachnotiz erfassen') +
+        '<div style="padding:14px 18px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(180,172,158,.4)">' +
+          '<button onclick="App.toggleRec()" style="width:66px;height:66px;border-radius:999px;border:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:' + (recording ? '#a04040' : '#1e3f2b') + ';animation:' + (recording ? 'rec-halo 1.6s ease-in-out infinite' : 'none') + '">' +
+            '<span style="width:20px;height:20px;border-radius:' + (recording ? '4px' : '999px') + ';background:#faf8f4;display:block"></span>' +
+          '</button>' +
+          '<div style="flex:1;min-width:0">' + waveformHtml(recording) +
+            '<div style="font-size:11px;color:#8a8578;margin-top:8px">' + (recording ? 'Aufnahme läuft — Tippen beendet' : ('Aufnahme beendet · ' + timer + ' · lokal transkribiert')) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="flex:1;overflow:auto;padding:14px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
+          '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px">' +
+            '<div class="scs-lbl">Transkript</div>' +
+            '<div style="font-size:13px;line-height:1.55;color:#3d3b36;margin-top:6px">„… hab lang mit der Katrin von den Stadtwerken Landsberg geredet, kennt den Michael, Kommunikationsleitung. Will im September nochmal sprechen, Thema VoiceOn zu Regionalstrom …"</div>' +
+          '</div>' +
+          '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:4px"><div class="scs-lbl">Vorschläge</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36">' + countLabel + '</span></div>' +
+          fieldsHtml +
+          '<div style="padding:12px 14px;background:rgba(196,135,59,.07);border:1px solid rgba(196,135,59,.35);border-radius:10px">' +
+            '<div style="display:flex;gap:9px;align-items:flex-start"><span style="color:#c4873b;font-size:14px;line-height:1.2">⚠</span>' +
+              '<div><div style="font-size:13px;font-weight:600;color:#1a1a18">Freigaben bleiben offen</div><div style="font-size:12px;line-height:1.45;color:#3d3b36;margin-top:3px">Nennung, Tagging und Foto/Film sind aus Recherche nicht ableitbar. Bitte holen Sie die Bestätigung direkt ein.</div></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div style="padding:12px 18px calc(env(safe-area-inset-bottom,20px) + 14px);background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-top:1px solid rgba(180,172,158,.4)">' +
+          '<div style="display:flex;align-items:center;gap:12px">' +
+            '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + countLabel + ' bestätigt</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 wird gesetzt</div></div>' +
+            '<div style="padding:13px 18px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:14px;font-weight:600">Übernehmen</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function screen1c() {
+    var drafts = [
+      { name: 'Katrin Behrens', tint: '#2d5a3d' },
+      { name: 'Jonas Feldmann', tint: '#6b5c4a' },
+      { name: 'Marija Petrenko', tint: '#8f4a1e' }
+    ];
+    var draftName = drafts[state.draftIdx % drafts.length].name;
+    var noteLabel = state.draftIdx % 3 === 2 ? 'Sensibilitätsflag — keine Standortdetails' : 'Kurzer Kontext, ein Satz genügt';
+
+    var rollenHtml = ['Lead', 'Partner', 'Sponsor', 'Gast'].map(function (r) {
+      var active = state.rolle === r;
+      return '<button onclick="App.setRolle(\'' + r + '\')" style="flex:1;cursor:pointer;padding:9px 4px;border-radius:8px;font-size:12px;font-weight:600;letter-spacing:.2px;white-space:nowrap;background:' + (active ? '#2d5a3d' : 'transparent') + ';color:' + (active ? '#faf8f4' : '#3d3b36') + ';border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + '">' + r + '</button>';
+    }).join('');
+
+    var stackHtml = state.stack.map(function (s) {
+      var initials = s.name.split(' ').map(function (w) { return w[0]; }).join('');
+      return '' +
+        '<div style="display:flex;align-items:center;gap:11px;padding:11px 12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+          '<div style="width:34px;height:34px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;color:#faf8f4;background:' + s.tint + '">' + initials + '</div>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(s.name) + '</div><div style="font-size:11px;color:#8a8578;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(s.note) + '</div></div>' +
+          '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;color:#8a8578;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 7px;flex-shrink:0">' + s.rolle + '</span>' +
+        '</div>';
+    }).join('');
+
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        '<div style="padding:calc(env(safe-area-inset-top,20px) + 14px) 18px 14px;background:#1e3f2b">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<button class="kk-back" onclick="App.nav(\'home\')" style="color:rgba(250,248,244,.75)">‹ Übersicht</button>' +
+            '<span style="width:7px;height:7px;border-radius:999px;background:#5a9b6e;animation:live-dot 2.5s ease-in-out infinite;margin-left:auto"></span>' +
+            '<span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:rgba(250,248,244,.65)">Event-Modus läuft</span>' +
+          '</div>' +
+          '<div style="font-size:22px;font-weight:600;color:#faf8f4;margin-top:8px;letter-spacing:-.3px">Surprise Surprise · Landsberg</div>' +
+          '<div style="display:flex;align-items:baseline;gap:8px;margin-top:10px"><span style="font-family:\'JetBrains Mono\',monospace;font-size:34px;font-weight:600;color:#faf8f4;line-height:1">' + String(state.stack.length).padStart(2, '0') + '</span><span style="font-size:12px;color:rgba(250,248,244,.65)">Begegnungen erfasst</span></div>' +
+        '</div>' +
+        '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px;background:#faf8f4;border-bottom:1px solid rgba(180,172,158,.4)">' +
+          '<div><div class="scs-lbl">Name</div><div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding-bottom:8px;border-bottom:1.5px solid #d5cfc3"><span style="font-size:19px;color:#1a1a18;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(draftName) + '</span><span style="width:30px;height:30px;border-radius:8px;background:#eae5d9;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">VK</span></div></div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Visitenkarte</span>' +
+            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Sprachnotiz</span>' +
+            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Gästeliste</span>' +
+          '</div>' +
+          '<div><div class="scs-lbl">Einordnung</div><div style="display:flex;gap:6px;margin-top:7px">' + rollenHtml + '</div></div>' +
+          '<div><div class="scs-lbl">Eine Zeile Kontext</div><div style="margin-top:6px;padding:11px 12px;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);border-radius:8px;font-size:13px;color:#8a8578;line-height:1.4">' + esc(noteLabel) + '</div></div>' +
+          '<button onclick="App.addToStack()" style="border:none;cursor:pointer;padding:15px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">In den Stapel</button>' +
+        '</div>' +
+        '<div style="flex:1;overflow:auto;padding:14px 18px calc(env(safe-area-inset-bottom,20px) + 24px)">' +
+          '<div style="display:flex;align-items:baseline;justify-content:space-between"><div class="scs-lbl">Stapel heute</div><span style="font-size:11px;color:#8a8578">Nachlese 22:30</span></div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' + stackHtml + '</div>' +
+          '<div style="margin-top:14px;padding:12px 14px;border:1px dashed #d5cfc3;border-radius:10px;font-size:12px;line-height:1.5;color:#3d3b36">Nach dem Event: Recherche, Anschluss/Mehrwert und Interaktionen in einem Durchgang — der Stapel bleibt bis dahin flach.</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function screen2a() {
+    var notifsHtml = state.notifs.map(function (n) {
+      return '' +
+        '<div style="padding:13px 14px;border-radius:14px;background:rgba(250,248,244,.14);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12)">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="width:18px;height:18px;border-radius:5px;background:#faf8f4;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;color:#1e3f2b">KK</span>' +
+            '<span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:rgba(250,248,244,.65)">Kultur.Konvoi</span>' +
+            '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:rgba(250,248,244,.55)">' + esc(n.time) + '</span>' +
+          '</div>' +
+          '<div style="font-size:14px;font-weight:600;color:#faf8f4;margin-top:9px;line-height:1.35">' + esc(n.title) + '</div>' +
+          '<div style="font-size:13px;color:rgba(250,248,244,.72);margin-top:3px;line-height:1.45">' + esc(n.body) + '</div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px">' +
+            '<button onclick="App.dropNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;border:none;background:#faf8f4;color:#1e3f2b;font-size:12px;font-weight:600">' + esc(n.primary) + '</button>' +
+            '<button onclick="App.dropNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;background:transparent;border:1px solid rgba(250,248,244,.35);color:rgba(250,248,244,.85);font-size:12px;font-weight:600">Später</button>' +
+          '</div>' +
+        '</div>';
+    }).join('');
+    if (!state.notifs.length) {
+      notifsHtml = '<div style="padding:16px;border-radius:14px;border:1px dashed rgba(250,248,244,.3);text-align:center;font-size:12px;color:rgba(250,248,244,.6)">Keine offenen Benachrichtigungen. Nächster Wochenlauf Montag 08:00.</div>';
+    }
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#1e3f2b">' +
+        '<div style="padding:calc(env(safe-area-inset-top,20px) + 10px) 18px 0"><button class="kk-back" onclick="App.nav(\'home\')" style="color:rgba(250,248,244,.75)">‹ Übersicht</button></div>' +
+        '<div style="padding:18px 22px 26px;text-align:center">' +
+          '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;letter-spacing:1px;color:rgba(250,248,244,.6)">FREITAG, 21.08.2026</div>' +
+          '<div style="font-family:\'JetBrains Mono\',monospace;font-size:64px;font-weight:600;color:#faf8f4;line-height:1.05;margin-top:6px">21:47</div>' +
+        '</div>' +
+        '<div style="flex:1;overflow:auto;padding:0 14px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
+          notifsHtml +
+          '<div style="margin-top:auto;padding-top:12px;text-align:center;font-size:11px;color:rgba(250,248,244,.5);line-height:1.5">Push nur für fällige Aufgaben und offene Freigaben — keine Aktivitätsmeldungen.</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function mailBody() {
+    var tone = state.tone, blocks = state.activeBlocks;
+    function has(b) { return blocks.indexOf(b) !== -1; }
+    var p = [];
+    p.push('Sehr geehrte Frau Dr. Behrens,');
+    p.push(has('Bezug aufs Gespräch')
+      ? (tone === 'Ausführlich'
+        ? 'gestern Abend in Landsberg haben wir über die Kommunikation der Stadtwerke rund um Regionalstrom gesprochen — und darüber, wie schwer sich das Thema in klassischen Formaten erzählen lässt. Das ist mir hängen geblieben.'
+        : 'schön, dass wir gestern in Landsberg ins Gespräch gekommen sind.')
+      : 'ich melde mich im Anschluss an unsere Begegnung in Landsberg.');
+    if (has('VoiceOn-Anschluss')) {
+      p.push(tone === 'Ausführlich'
+        ? 'Kultur.Konvoi arbeitet mit VoiceOn an genau dieser Stelle: ein multimediales Live-Format, das ein Sachthema hörbar und erlebbar macht, statt es zu erklären. Für Regionalstrom sehe ich einen sehr direkten Anschluss.'
+        : 'Für Regionalstrom sehe ich einen direkten Anschluss an unser Live-Format VoiceOn.');
+    }
+    if (has('Termin vorschlagen')) p.push('Hätten Sie in der Woche ab dem 08.09. dreißig Minuten Zeit? Dienstag- oder Donnerstagvormittag würde bei mir gut passen.');
+    if (has('Netzwerk-Hinweis')) p.push('Den Kontakt zum Kulturamt kann ich dabei gern mitdenken — dort gibt es Interesse an einer gemeinsamen Programmklammer.');
+    p.push('Herzliche Grüße');
+    return p;
+  }
+
+  function screen2b() {
+    var tonesHtml = ['Knapp', 'Ausführlich', 'Sachlich'].map(function (t) {
+      var active = state.tone === t;
+      return '<button onclick="App.setTone(\'' + t + '\')" style="flex:1;cursor:pointer;padding:9px 4px;border-radius:8px;font-size:12px;font-weight:600;white-space:nowrap;background:' + (active ? '#2d5a3d' : 'transparent') + ';color:' + (active ? '#faf8f4' : '#3d3b36') + ';border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + '">' + t + '</button>';
+    }).join('');
+
+    var blocksHtml = ['Bezug aufs Gespräch', 'VoiceOn-Anschluss', 'Termin vorschlagen', 'Netzwerk-Hinweis'].map(function (b) {
+      var on = state.activeBlocks.indexOf(b) !== -1;
+      return '<button onclick="App.toggleBlock(\'' + esc(b).replace(/'/g, "\\'") + '\')" style="cursor:pointer;padding:6px 11px;border-radius:999px;font-size:11.5px;white-space:nowrap;background:' + (on ? 'rgba(45,90,61,.07)' : 'transparent') + ';color:' + (on ? '#2d5a3d' : '#8a8578') + ';border:1px solid ' + (on ? 'rgba(45,90,61,.35)' : 'rgba(180,172,158,.4)') + '">' + esc(b) + '</button>';
+    }).join('');
+
+    var paragraphs = mailBody();
+    var paragraphsHtml = paragraphs.map(function (t) { return '<div style="font-size:13.5px;line-height:1.6;color:#3d3b36">' + esc(t) + '</div>'; }).join('');
+    var wordCount = paragraphs.reduce(function (n, t) { return n + t.split(/\s+/).length; }, 0) + ' Wörter · de-DE';
+    var subject = state.tone === 'Ausführlich' ? 'Regionalstrom hörbar machen — Anschluss an VoiceOn' : 'Nach Landsberg: VoiceOn und Regionalstrom';
+
+    var sentBlock = '';
+    if (state.mail === 'sent') {
+      sentBlock = '' +
+        '<div style="padding:14px;background:rgba(45,90,61,.07);border:1px solid rgba(45,90,61,.35);border-radius:10px">' +
+          '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">Gesendet und protokolliert</div></div>' +
+          '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10.5px;line-height:1.6;color:#3d3b36;margin-top:9px">21.08.2026 21:52 · MAIL RAUS · P-0417 BEHRENS<br>WIEDERVORLAGE 08.09.2026 GESETZT</div>' +
+          '<button onclick="App.resetMail()" style="margin-top:10px;cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Nächsten Entwurf prüfen</button>' +
+        '</div>';
+    }
+
+    var sendLabel = state.mail === 'sending' ? 'Sendet …' : state.mail === 'sent' ? 'Nächster' : 'Freigeben und senden';
+    var sendBg = state.mail === 'sent' ? '#6b5c4a' : '#2d5a3d';
+    var sendState = state.mail === 'sending' ? 'Freigabe erteilt · Übergabe ans Postfach' : state.mail === 'sent' ? 'Protokoll-Zeile geschrieben' : 'Entwurf geprüft?';
+
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        '<div style="padding:calc(env(safe-area-inset-top,20px) + 14px) 18px 12px;background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-bottom:1px solid rgba(180,172,158,.4);display:flex;align-items:center;justify-content:space-between">' +
+          '<button class="kk-back" onclick="App.nav(\'home\')">‹ Übersicht</button>' +
+          '<span class="scs-lbl">Follow-up · Freigabe</span>' +
+          '<span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36">' + state.mailIdx + ' / 3</span>' +
+        '</div>' +
+        '<div style="flex:1;overflow:auto;padding:14px 18px 32px;display:flex;flex-direction:column;gap:10px">' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+            '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Empfängerin</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#2d5a3d;letter-spacing:.5px">ADRESSE BELEGT</span></div>' +
+            '<div style="font-size:15px;font-weight:600;color:#1a1a18;margin-top:5px">Dr. Katrin Behrens</div>' +
+            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:3px">k.behrens@stadtwerke-landsberg.de</div>' +
+            '<div style="font-size:11px;color:#8a8578;margin-top:6px">Anlass: Begegnung Surprise Surprise, 21.08.2026</div>' +
+          '</div>' +
+          '<div><div class="scs-lbl">Tonfall</div><div style="display:flex;gap:6px;margin-top:7px">' + tonesHtml + '</div></div>' +
+          '<div><div class="scs-lbl">Bausteine</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">' + blocksHtml + '</div></div>' +
+          '<div style="padding:14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+            '<div class="scs-lbl">Betreff</div><div style="font-size:14px;font-weight:600;color:#1a1a18;margin-top:4px;line-height:1.35">' + esc(subject) + '</div>' +
+            '<div style="height:1px;background:rgba(180,172,158,.4);margin:12px 0"></div>' +
+            '<div style="display:flex;flex-direction:column;gap:10px">' + paragraphsHtml + '</div>' +
+            '<div style="display:flex;gap:8px;margin-top:14px;align-items:center"><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;color:#8a8578;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 7px">ENTWURF · CLAUDE</span><span style="font-size:11px;color:#8a8578">' + wordCount + '</span></div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:rgba(196,135,59,.07);border:1px solid rgba(196,135,59,.35);border-radius:10px;display:flex;gap:9px;align-items:flex-start"><span style="color:#c4873b;font-size:14px;line-height:1.2">⚠</span><div style="font-size:12px;line-height:1.5;color:#3d3b36">Freigabe zur Nennung liegt nicht vor. Bitte verzichten Sie in dieser Mail auf Namen Dritter und auf Fotomaterial.</div></div>' +
+          sentBlock +
+        '</div>' +
+        '<div style="padding:12px 18px calc(env(safe-area-inset-bottom,20px) + 14px);background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-top:1px solid rgba(180,172,158,.4);display:flex;gap:10px;align-items:center">' +
+          '<div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#1a1a18">' + sendState + '</div><div style="font-size:11px;color:#8a8578">Versand nur nach Freigabe</div></div>' +
+          '<button onclick="App.sendMail()" style="cursor:pointer;border:none;padding:14px 18px;border-radius:10px;font-size:14px;font-weight:600;background:' + sendBg + ';color:#faf8f4">' + sendLabel + '</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function screen2c() {
+    var settingsHtml = state.settings.map(function (s) {
+      return '' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:13px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+          '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1a1a18">' + esc(s.title) + '</div><div style="font-size:11.5px;color:#8a8578;line-height:1.45;margin-top:2px">' + esc(s.hint) + '</div></div>' +
+          '<button onclick="App.toggleSetting(\'' + s.id + '\')" style="cursor:pointer;flex-shrink:0;width:46px;height:28px;border-radius:999px;border:1px solid ' + (s.on ? '#2d5a3d' : 'rgba(180,172,158,.4)') + ';background:' + (s.on ? '#2d5a3d' : '#eae5d9') + ';position:relative;padding:0">' +
+            '<span style="position:absolute;top:2px;left:' + (s.on ? '22px' : '2px') + ';width:22px;height:22px;border-radius:999px;background:#faf8f4;box-shadow:0 1px 3px rgba(26,26,24,.25);transition:left 220ms cubic-bezier(.4,0,.2,1)"></span>' +
+          '</button>' +
+        '</div>';
+    }).join('');
+
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        backBar('Benachrichtigungen') +
+        '<div style="flex:1;overflow:auto;padding:16px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
+          '<div class="scs-lbl">Anlässe</div>' +
+          settingsHtml +
+          '<div class="scs-lbl" style="margin-top:8px">Zeitfenster</div>' +
+          '<div style="padding:13px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:#1a1a18">Ruhezeit</span><span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18">22:00 – 07:30</span></div>' +
+            '<div style="height:1px;background:rgba(180,172,158,.4);margin:11px 0"></div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:#1a1a18">Wochenlauf</span><span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18">MO 08:00</span></div>' +
+            '<div style="height:1px;background:rgba(180,172,158,.4);margin:11px 0"></div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:14px;color:#1a1a18">Event-Nachlese</span><span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18">+2 H NACH ENDE</span></div>' +
+          '</div>' +
+          '<div class="scs-lbl" style="margin-top:8px">Versand</div>' +
+          '<div style="padding:13px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #a04040">' +
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<div style="flex:1"><div style="font-size:14px;font-weight:600;color:#1a1a18">Automatisch senden</div><div style="font-size:11.5px;color:#8a8578;line-height:1.45;margin-top:2px">Gesperrt. Jede Mail braucht eine dokumentierte Freigabe.</div></div>' +
+              '<div style="width:46px;height:28px;border-radius:999px;background:#eae5d9;border:1px solid rgba(180,172,158,.4);position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:999px;background:#b8b2a6"></span></div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px;font-size:12px;line-height:1.5;color:#3d3b36">Postfach verbunden: <span style="font-family:\'JetBrains Mono\',monospace;font-size:11.5px">team@kulturkonvoi.de</span> · Signatur wird aus dem Postfach übernommen.</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  var SCREENS = { home: screenHome, '1a': screen1a, '1b': screen1b, '1c': screen1c, '2a': screen2a, '2b': screen2b, '2c': screen2c };
+
+  function render() {
+    var fn = SCREENS[state.route] || screenHome;
+    document.getElementById('root').innerHTML = fn();
+  }
+
+  window.App = {
+    nav: function (route) {
+      if (route !== '1b' && recTimer) { clearInterval(recTimer); recTimer = null; }
+      state.route = route;
+      render();
+    },
+    toggleRec: function () {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      if (state.rec === 'recording') { state.rec = 'done'; render(); return; }
+      state.rec = 'recording'; state.sec = 0; render();
+      recTimer = setInterval(function () {
+        if (state.sec >= 38) { clearInterval(recTimer); recTimer = null; state.rec = 'done'; state.sec = 38; }
+        else { state.sec += 1; }
+        render();
+      }, 220);
+    },
+    setStatus: function (i, status) { state.fields[i].status = status; render(); },
+    setRolle: function (r) { state.rolle = r; render(); },
+    addToStack: function () {
+      var drafts = [
+        { name: 'Katrin Behrens', note: 'Stadtwerke, VoiceOn Regionalstrom', tint: '#2d5a3d' },
+        { name: 'Jonas Feldmann', note: 'Bühnenbau, kennt Elena', tint: '#6b5c4a' },
+        { name: 'Marija Petrenko', note: 'Übersetzung, Sensibilitätsflag', tint: '#8f4a1e' }
+      ];
+      var d = drafts[state.draftIdx % drafts.length];
+      state.stack.unshift({ name: d.name, note: d.note, tint: d.tint, rolle: state.rolle.toUpperCase() });
+      state.draftIdx += 1;
+      render();
+    },
+    dropNotif: function (id) { state.notifs = state.notifs.filter(function (n) { return n.id !== id; }); render(); },
+    setTone: function (t) { state.tone = t; render(); },
+    toggleBlock: function (b) {
+      var idx = state.activeBlocks.indexOf(b);
+      if (idx === -1) state.activeBlocks.push(b); else state.activeBlocks.splice(idx, 1);
+      render();
+    },
+    sendMail: function () {
+      if (state.mail === 'sending') return;
+      if (state.mail === 'sent') { App.resetMail(); return; }
+      state.mail = 'sending'; render();
+      setTimeout(function () { state.mail = 'sent'; render(); }, 900);
+    },
+    resetMail: function () { state.mail = 'draft'; state.mailIdx = (state.mailIdx % 3) + 1; render(); },
+    toggleSetting: function (id) {
+      state.settings = state.settings.map(function (s) { return s.id === id ? Object.assign({}, s, { on: !s.on }) : s; });
+      render();
+    }
+  };
+
+  render();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js').catch(function () {});
+    });
+  }
+})();
+</script>
+</body>
+</html>
