@@ -62,6 +62,9 @@
     tags1a: ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'],
     saved1a: 'idle',
     taken1b: 'idle',
+    scanning1a: false,
+    scannedAt1a: '21.08.2026 19:42',
+    manualFields1a: { name: '', organisation: '', funktion: '' },
     notifs: [
       { id: 'wv', time: 'jetzt', title: 'Wiedervorlage fällig — Dr. Katrin Behrens', body: 'Rückmeldung nach dem Urlaub zugesagt. Letzte Interaktion 21.08.2026.', primary: 'Briefing öffnen', target: '1a' },
       { id: 'mail', time: 'vor 12 Min', title: '3 Follow-up-Mails warten auf Freigabe', body: 'Entwürfe aus Surprise Surprise, Landsberg. Kein Versand ohne Freigabe.', primary: 'Prüfen', target: '2b' },
@@ -136,18 +139,66 @@
       '</div>';
   }
 
-  var SOURCE1A_INFO = {
-    'Visitenkarte': { badge: 'FOTO<br>VK', label: 'Erkannt aus Visitenkarte', meta: '8 Felder · 21.08.2026 19:42' },
-    'Sprachnotiz': { badge: 'AUDIO', label: 'Erkannt aus Sprachnotiz', meta: '6 Felder · 21.08.2026 19:44 · 00:38' },
-    'Manuell': { badge: '✎', label: 'Manuell erfasst', meta: 'Eingabe durch dich · 21.08.2026' }
-  };
-
   function screen1a() {
     var sourceTabsHtml = ['Visitenkarte', 'Sprachnotiz', 'Manuell'].map(function (s) {
       var active = state.source1a === s;
       return '<button onclick="App.setSource1a(\'' + s + '\')" style="flex:1;cursor:pointer;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + ';background:' + (active ? '#2d5a3d' : 'rgba(250,248,244,.7)') + ';color:' + (active ? '#faf8f4' : '#3d3b36') + '">' + s + '</button>';
     }).join('');
-    var srcInfo = SOURCE1A_INFO[state.source1a];
+
+    var srcBlock;
+    if (state.source1a === 'Visitenkarte') {
+      srcBlock = '' +
+        '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
+          '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">' + (state.scanning1a ? '···' : 'FOTO<br>VK') + '</div>' +
+          '<div style="flex:1">' +
+            '<div class="scs-lbl">' + (state.scanning1a ? 'Scanne Visitenkarte …' : 'Erkannt aus Visitenkarte') + '</div>' +
+            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">' + (state.scanning1a ? 'Bitte Kamera ruhig halten' : ('8 Felder · ' + state.scannedAt1a)) + '</div>' +
+          '</div>' +
+          '<button onclick="App.rescan1a()"' + (state.scanning1a ? ' disabled' : '') + ' style="cursor:' + (state.scanning1a ? 'default' : 'pointer') + ';flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:11px;font-weight:600;opacity:' + (state.scanning1a ? 0.5 : 1) + '">↻ Erneut</button>' +
+        '</div>';
+    } else if (state.source1a === 'Sprachnotiz') {
+      var recording1a = state.rec === 'recording';
+      var timer1a = String(Math.floor(state.sec / 60)).padStart(2, '0') + ':' + String(state.sec % 60).padStart(2, '0');
+      srcBlock = '' +
+        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;display:flex;align-items:center;gap:14px">' +
+          '<button onclick="App.toggleRec()" style="width:52px;height:52px;border-radius:999px;border:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:' + (recording1a ? '#a04040' : '#1e3f2b') + ';animation:' + (recording1a ? 'rec-halo 1.6s ease-in-out infinite' : 'none') + '">' +
+            '<span style="width:16px;height:16px;border-radius:' + (recording1a ? '4px' : '999px') + ';background:#faf8f4;display:block"></span>' +
+          '</button>' +
+          '<div style="flex:1;min-width:0">' +
+            (recording1a ? waveformHtml(true) : '<div class="scs-lbl">Erkannt aus Sprachnotiz</div>') +
+            '<div style="font-size:11px;color:#8a8578;margin-top:6px">' + (recording1a ? ('Aufnahme läuft (' + timer1a + ') — Tippen beendet') : (state.sec > 0 ? ('Aufnahme beendet · ' + timer1a + ' · lokal transkribiert') : 'Tippen zum Aufnehmen')) + '</div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      srcBlock = '';
+    }
+
+    var nameBlock, orgFuncBlock;
+    if (state.source1a === 'Manuell') {
+      nameBlock = '' +
+        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+          '<div class="scs-lbl">Name</div>' +
+          '<input type="text" value="' + esc(state.manualFields1a.name) + '" placeholder="Name eingeben" onblur="App.updateManualField1a(\'name\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:17px;font-weight:600;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none">' +
+        '</div>';
+      orgFuncBlock = '' +
+        '<div style="display:flex;gap:10px">' +
+          '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Organisation</div>' +
+            '<input type="text" value="' + esc(state.manualFields1a.organisation) + '" placeholder="Organisation eingeben" onblur="App.updateManualField1a(\'organisation\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none"></div>' +
+          '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Funktion</div>' +
+            '<input type="text" value="' + esc(state.manualFields1a.funktion) + '" placeholder="Funktion eingeben" onblur="App.updateManualField1a(\'funktion\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none"></div>' +
+        '</div>';
+    } else {
+      nameBlock = '' +
+        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+          '<div class="scs-lbl">Name</div><div style="font-size:17px;font-weight:600;color:#1a1a18;margin-top:4px">Dr. Katrin Behrens</div>' +
+          '<div style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578;margin-top:6px">QUELLE: IMPRESSUM · 21.08.2026</div>' +
+        '</div>';
+      orgFuncBlock = '' +
+        '<div style="display:flex;gap:10px">' +
+          '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Organisation</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Stadtwerke Landsberg</div></div>' +
+          '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Funktion</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Leitung Kommunikation</div></div>' +
+        '</div>';
+    }
 
     var tagsHtml = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'].map(function (t) {
       var on = state.tags1a.indexOf(t) !== -1;
@@ -156,9 +207,10 @@
 
     var saveBlock;
     if (state.saved1a === 'saved') {
+      var savedName = (state.source1a === 'Manuell' && state.manualFields1a.name.trim()) ? state.manualFields1a.name.trim() : 'Dr. Katrin Behrens';
       saveBlock = '' +
         '<div style="margin-top:6px;padding:14px;background:rgba(45,90,61,.07);border:1px solid rgba(45,90,61,.35);border-radius:10px">' +
-          '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">Kontakt angelegt und protokolliert</div></div>' +
+          '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">„' + esc(savedName) + '" angelegt und protokolliert</div></div>' +
           '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10.5px;line-height:1.6;color:#3d3b36;margin-top:9px">21.08.2026 · KONTAKT ANGELEGT · P-0418 BEHRENS</div>' +
           '<button onclick="App.nav(\'home\')" style="margin-top:10px;cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Zur Übersicht</button>' +
         '</div>';
@@ -173,18 +225,9 @@
         backBar('Neuer Kontakt') +
         '<div style="flex:1;padding:16px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
           '<div style="display:flex;gap:6px">' + sourceTabsHtml + '</div>' +
-          '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
-            '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">' + srcInfo.badge + '</div>' +
-            '<div style="flex:1"><div class="scs-lbl">' + srcInfo.label + '</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">' + srcInfo.meta + '</div></div>' +
-          '</div>' +
-          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
-            '<div class="scs-lbl">Name</div><div style="font-size:17px;font-weight:600;color:#1a1a18;margin-top:4px">Dr. Katrin Behrens</div>' +
-            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578;margin-top:6px">QUELLE: IMPRESSUM · 21.08.2026</div>' +
-          '</div>' +
-          '<div style="display:flex;gap:10px">' +
-            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Organisation</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Stadtwerke Landsberg</div></div>' +
-            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Funktion</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.3">Leitung Kommunikation</div></div>' +
-          '</div>' +
+          srcBlock +
+          nameBlock +
+          orgFuncBlock +
           '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
             '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
           '</div>' +
@@ -514,7 +557,8 @@
 
   window.App = {
     nav: function (route) {
-      if (route !== '1b' && recTimer) { clearInterval(recTimer); recTimer = null; }
+      var keepRecording = route === '1b' || (route === '1a' && state.source1a === 'Sprachnotiz');
+      if (!keepRecording && recTimer) { clearInterval(recTimer); recTimer = null; }
       state.route = route;
       render();
     },
@@ -556,7 +600,21 @@
     explainLocked: function () {
       showToast('Automatischer Versand ist bewusst gesperrt — jede Mail braucht eine dokumentierte Freigabe.');
     },
-    setSource1a: function (s) { state.source1a = s; render(); },
+    setSource1a: function (s) {
+      if (s !== 'Sprachnotiz' && recTimer) { clearInterval(recTimer); recTimer = null; state.rec = 'done'; }
+      state.source1a = s;
+      render();
+    },
+    rescan1a: function () {
+      if (state.scanning1a) return;
+      state.scanning1a = true; render();
+      setTimeout(function () {
+        state.scanning1a = false;
+        state.scannedAt1a = 'gerade eben';
+        render();
+      }, 900);
+    },
+    updateManualField1a: function (key, value) { state.manualFields1a[key] = value; render(); },
     toggleTag1a: function (t) {
       var idx = state.tags1a.indexOf(t);
       if (idx === -1) state.tags1a.push(t); else state.tags1a.splice(idx, 1);
