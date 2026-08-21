@@ -1,4 +1,4 @@
-const CACHE = 'kk-crm-v7';
+const CACHE = 'kk-crm-v8';
 const SHELL = [
   './',
   './index.html',

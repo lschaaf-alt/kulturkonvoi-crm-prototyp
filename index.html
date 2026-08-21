@@ -136,17 +136,45 @@
     var emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
     var phoneRe = /(\+?\d[\d\s\-\/()]{6,}\d)/;
     var urlRe = /\b(?:https?:\/\/|www\.)\S+/i;
-    var remaining = [];
+
+    function isMostlyLetters(s) {
+      var letters = (s.match(/[A-Za-zÄÖÜäöüßÀ-ÿ]/g) || []).length;
+      return s.length >= 3 && letters / s.length >= 0.6;
+    }
+
+    var candidates = [];
     lines.forEach(function (line) {
       if (emailRe.test(line) || phoneRe.test(line) || urlRe.test(line)) return;
-      remaining.push(line);
+      if (!isMostlyLetters(line)) return;
+      candidates.push(line);
     });
-    return {
-      name: remaining[0] || '',
-      funktion: remaining[1] || '',
-      organisation: remaining[2] || '',
-      raw: lines.join('\n')
-    };
+
+    var used = candidates.map(function () { return false; });
+    var FUNKTION_KEYWORDS = ['Geschäftsführ', 'Kommunikationsleit', 'Marketingleit', 'Pressesprecher', 'Vorstand', 'Direktor', 'Inhaber', 'Gründer', 'Founder', 'Redaktion', 'Referent', 'Berater', 'Manager', 'Sprecher', 'Vertrieb', 'Leitung', 'CEO'];
+    var ORG_SUFFIX_RE = /\b(GmbH|AG|e\.\s?V\.|KG|Stadtwerke[n]?)\b/i;
+    var NAME_RE = /^(?:Dr\.|Prof\.|Herr|Frau)?\s*[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?\s[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?$/;
+
+    var name = '', funktion = '', organisation = '';
+
+    for (var i = 0; i < candidates.length && !funktion; i++) {
+      for (var k = 0; k < FUNKTION_KEYWORDS.length; k++) {
+        if (candidates[i].indexOf(FUNKTION_KEYWORDS[k]) !== -1) { funktion = candidates[i]; used[i] = true; break; }
+      }
+    }
+    for (var i = 0; i < candidates.length && !organisation; i++) {
+      if (!used[i] && ORG_SUFFIX_RE.test(candidates[i])) { organisation = candidates[i]; used[i] = true; }
+    }
+    for (var i = 0; i < candidates.length && !name; i++) {
+      if (!used[i] && NAME_RE.test(candidates[i])) { name = candidates[i]; used[i] = true; }
+    }
+    if (!organisation) {
+      for (var i = 0; i < candidates.length; i++) { if (!used[i]) { organisation = candidates[i]; used[i] = true; break; } }
+    }
+    if (!name) {
+      for (var i = 0; i < candidates.length; i++) { if (!used[i]) { name = candidates[i]; used[i] = true; break; } }
+    }
+
+    return { name: name, funktion: funktion, organisation: organisation, raw: lines.join('\n') };
   }
 
   function parseSpeechFields(rawText) {
