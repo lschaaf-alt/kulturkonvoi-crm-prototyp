@@ -223,7 +223,10 @@
         '<div style="margin-top:6px;padding:14px;background:rgba(45,90,61,.07);border:1px solid rgba(45,90,61,.35);border-radius:10px">' +
           '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">„' + esc(savedName) + '" angelegt und protokolliert</div></div>' +
           '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10.5px;line-height:1.6;color:#3d3b36;margin-top:9px">21.08.2026 · KONTAKT ANGELEGT · P-0418 BEHRENS</div>' +
-          '<button onclick="App.nav(\'home\')" style="margin-top:10px;cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Zur Übersicht</button>' +
+          '<div style="display:flex;gap:14px;margin-top:10px">' +
+            '<button onclick="App.resetContact1a()" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">+ Weiteren Kontakt anlegen</button>' +
+            '<button onclick="App.nav(\'home\')" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#8a8578">Zur Übersicht</button>' +
+          '</div>' +
         '</div>';
     } else {
       saveBlock = '' +
@@ -233,7 +236,10 @@
 
     return '' +
       '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
-        backBar('Neuer Kontakt') +
+        '<div style="padding:calc(env(safe-area-inset-top,20px) + 14px) 18px 14px;background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-bottom:1px solid rgba(180,172,158,.4);display:flex;align-items:center;gap:10px">' +
+          '<button class="kk-back" onclick="App.nav(\'home\')">‹ Übersicht</button>' +
+          '<button onclick="App.resetContact1a()" title="Formular für einen neuen Kontakt leeren" class="scs-lbl" style="margin-left:auto;cursor:pointer;background:none;border:none;padding:0;font:inherit;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:5px">Neuer Kontakt <span style="font-size:12px">↻</span></button>' +
+        '</div>' +
         '<div style="flex:1;padding:16px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
           '<div style="display:flex;gap:6px">' + sourceTabsHtml + '</div>' +
           srcBlock +
@@ -629,6 +635,19 @@
       }, 900);
     },
     updateManualField1a: function (key, value) { state.manualFields1a[key] = value; render(); },
+    resetContact1a: function () {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      state.source1a = 'Visitenkarte';
+      state.manualFields1a = { name: '', organisation: '', funktion: '', herkunft: '' };
+      state.tags1a = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'];
+      state.saved1a = 'idle';
+      state.scanning1a = false;
+      state.scannedAt1a = '21.08.2026 19:42';
+      state.rec = 'done';
+      state.sec = 38;
+      render();
+      showToast('Neues Kontaktformular gestartet.');
+    },
     toggleTag1a: function (t) {
       var idx = state.tags1a.indexOf(t);
       if (idx === -1) state.tags1a.push(t); else state.tags1a.splice(idx, 1);
