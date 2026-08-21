@@ -62,8 +62,7 @@
     tags1a: ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'],
     saved1a: 'idle',
     taken1b: 'idle',
-    scanning1a: false,
-    scannedAt1a: '21.08.2026 19:42',
+    scan1a: { status: 'idle', photo: null, rawText: '', progress: 0, errorMsg: '' },
     manualFields1a: { name: '', organisation: '', funktion: '', herkunft: '' },
     note1c: '',
     notifs: [
@@ -89,6 +88,24 @@
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  function parseCardText(rawText) {
+    var lines = rawText.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+    var emailRe = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
+    var phoneRe = /(\+?\d[\d\s\-\/()]{6,}\d)/;
+    var urlRe = /\b(?:https?:\/\/|www\.)\S+/i;
+    var remaining = [];
+    lines.forEach(function (line) {
+      if (emailRe.test(line) || phoneRe.test(line) || urlRe.test(line)) return;
+      remaining.push(line);
+    });
+    return {
+      name: remaining[0] || '',
+      funktion: remaining[1] || '',
+      organisation: remaining[2] || '',
+      raw: lines.join('\n')
+    };
   }
 
   var toastTimer = null;
@@ -148,15 +165,38 @@
 
     var srcBlock;
     if (state.source1a === 'Visitenkarte') {
-      srcBlock = '' +
-        '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
-          '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">' + (state.scanning1a ? '···' : 'FOTO<br>VK') + '</div>' +
-          '<div style="flex:1">' +
-            '<div class="scs-lbl">' + (state.scanning1a ? 'Scanne Visitenkarte …' : 'Erkannt aus Visitenkarte') + '</div>' +
-            '<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">' + (state.scanning1a ? 'Bitte Kamera ruhig halten' : ('8 Felder · ' + state.scannedAt1a)) + '</div>' +
+      var sc = state.scan1a;
+      var fileInputHtml = '<input type="file" accept="image/*" capture="environment" id="vk-file-input" style="display:none" onchange="App.handleCardPhoto(this.files[0])">';
+      if (sc.status === 'scanning') {
+        srcBlock = '' +
+          fileInputHtml +
+          '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
+            (sc.photo ? '<img src="' + sc.photo + '" style="width:58px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #d5cfc3;flex-shrink:0">' : '<div style="width:58px;height:44px;border-radius:6px;background:#eae5d9;flex-shrink:0"></div>') +
+            '<div style="flex:1"><div class="scs-lbl">Texterkennung läuft …</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">' + (sc.progress || 0) + '%</div></div>' +
+          '</div>';
+      } else if (sc.status === 'done') {
+        srcBlock = '' +
+          fileInputHtml +
+          '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
+            '<img src="' + sc.photo + '" style="width:58px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #d5cfc3;flex-shrink:0">' +
+            '<div style="flex:1"><div class="scs-lbl">Aus Foto erkannt</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#3d3b36;margin-top:4px">Bitte Felder unten prüfen</div></div>' +
+            '<button onclick="document.getElementById(\'vk-file-input\').click()" style="cursor:pointer;flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:11px;font-weight:600">↻ Neu</button>' +
           '</div>' +
-          '<button onclick="App.rescan1a()"' + (state.scanning1a ? ' disabled' : '') + ' style="cursor:' + (state.scanning1a ? 'default' : 'pointer') + ';flex-shrink:0;padding:8px 10px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:11px;font-weight:600;opacity:' + (state.scanning1a ? 0.5 : 1) + '">↻ Erneut</button>' +
-        '</div>';
+          (sc.rawText ? '<div style="padding:9px 12px;background:#eae5d9;border-radius:8px;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#3d3b36;line-height:1.5;white-space:pre-wrap;max-height:76px;overflow:auto">' + esc(sc.rawText) + '</div>' : '');
+      } else if (sc.status === 'error') {
+        srcBlock = '' +
+          fileInputHtml +
+          '<div style="padding:12px 14px;background:rgba(160,64,64,.07);border:1px solid rgba(160,64,64,.35);border-radius:10px">' +
+            '<div style="font-size:13px;font-weight:600;color:#1a1a18">' + esc(sc.errorMsg) + '</div>' +
+            '<button onclick="document.getElementById(\'vk-file-input\').click()" style="margin-top:8px;cursor:pointer;padding:8px 12px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:12px;font-weight:600">Erneut versuchen</button>' +
+          '</div>';
+      } else {
+        srcBlock = '' +
+          fileInputHtml +
+          '<button onclick="document.getElementById(\'vk-file-input\').click()" style="cursor:pointer;width:100%;padding:22px 14px;border:1.5px dashed #b8b2a6;border-radius:10px;background:#faf8f4;color:#3d3b36;font-size:14px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:6px">' +
+            '<span style="font-size:22px;line-height:1">📷</span>Visitenkarte fotografieren' +
+          '</button>';
+      }
     } else if (state.source1a === 'Sprachnotiz') {
       var recording1a = state.rec === 'recording';
       var timer1a = String(Math.floor(state.sec / 60)).padStart(2, '0') + ':' + String(state.sec % 60).padStart(2, '0');
@@ -174,8 +214,13 @@
       srcBlock = '';
     }
 
-    var nameBlock, orgFuncBlock;
-    if (state.source1a === 'Manuell') {
+    var showEditable = state.source1a === 'Manuell' || (state.source1a === 'Visitenkarte' && state.scan1a.status === 'done');
+    var awaitingScan = state.source1a === 'Visitenkarte' && state.scan1a.status !== 'done';
+
+    var nameBlock, orgFuncBlock, herkunftBlock;
+    if (awaitingScan) {
+      nameBlock = ''; orgFuncBlock = ''; herkunftBlock = '';
+    } else if (showEditable) {
       nameBlock = '' +
         '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
           '<div class="scs-lbl">Name</div>' +
@@ -201,24 +246,48 @@
         '</div>';
     }
 
-    var herkunftBlock = state.source1a === 'Manuell' ?
-      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
-        '<div class="scs-lbl">Herkunft / Vermittler</div>' +
-        '<input type="text" value="' + esc(state.manualFields1a.herkunft) + '" placeholder="Optional: wie kam der Kontakt zustande?" onblur="App.updateManualField1a(\'herkunft\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none">' +
-      '</div>'
-      :
-      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
-        '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
-      '</div>';
+    if (!awaitingScan) {
+      herkunftBlock = showEditable ?
+        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+          '<div class="scs-lbl">Herkunft / Vermittler</div>' +
+          '<input type="text" value="' + esc(state.manualFields1a.herkunft) + '" placeholder="Optional: wie kam der Kontakt zustande?" onblur="App.updateManualField1a(\'herkunft\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none">' +
+        '</div>'
+        :
+        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+          '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
+        '</div>';
+    }
 
     var tagsHtml = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'].map(function (t) {
       var on = state.tags1a.indexOf(t) !== -1;
       return '<button onclick="App.toggleTag1a(\'' + t.replace(/'/g, "\\'") + '\')" style="cursor:pointer;font-size:11px;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(45,90,61,.07)' : 'transparent') + ';border:1px solid ' + (on ? 'rgba(180,172,158,.4)' : 'rgba(180,172,158,.4)') + ';color:' + (on ? '#2d5a3d' : '#8a8578') + '">' + esc(t) + '</button>';
     }).join('');
 
+    var canSave1a = state.source1a !== 'Visitenkarte' || state.scan1a.status === 'done';
+
+    var restBlock1a = awaitingScan ? '' :
+      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Anschluss / Mehrwert</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#b8602a;letter-spacing:.5px">PFLICHT</span></div>' +
+        '<div style="font-size:14px;color:#8a8578;margin-top:6px;line-height:1.45;font-style:italic">Was kann sie für Kultur.Konvoi bedeuten — und umgekehrt?</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' + tagsHtml + '</div>' +
+      '</div>' +
+      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center"><div class="scs-lbl">Freigaben</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">NICHT ABLEITBAR</span></div>' +
+        '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Nennung<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Tagging<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Foto / Film<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:#8a8578;line-height:1.45;margin-top:10px">Freigaben ändern sich nur durch dokumentierte Bestätigung der Person — hier bewusst nicht antippbar.</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:10px">' +
+        '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Konfidenz</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="width:8px;height:8px;border-radius:999px;background:#c4873b;display:inline-block"></span><span style="font-size:13px;color:#1a1a18">teilweise offen</span></div></div>' +
+        '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Wiedervorlage</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18;margin-top:6px">08.09.2026</div></div>' +
+      '</div>';
+
     var saveBlock;
     if (state.saved1a === 'saved') {
-      var savedName = (state.source1a === 'Manuell' && state.manualFields1a.name.trim()) ? state.manualFields1a.name.trim() : 'Dr. Katrin Behrens';
+      var savedName = (showEditable && state.manualFields1a.name.trim()) ? state.manualFields1a.name.trim() : 'Dr. Katrin Behrens';
       saveBlock = '' +
         '<div style="margin-top:6px;padding:14px;background:rgba(45,90,61,.07);border:1px solid rgba(45,90,61,.35);border-radius:10px">' +
           '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">„' + esc(savedName) + '" angelegt und protokolliert</div></div>' +
@@ -228,6 +297,9 @@
             '<button onclick="App.nav(\'home\')" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#8a8578">Zur Übersicht</button>' +
           '</div>' +
         '</div>';
+    } else if (!canSave1a) {
+      saveBlock = '' +
+        '<div style="margin-top:6px;padding:13px;text-align:center;background:#eae5d9;color:#8a8578;border-radius:10px;font-size:14px;font-weight:600">Erst Visitenkarte fotografieren</div>';
     } else {
       saveBlock = '' +
         '<button onclick="App.saveContact1a()" style="margin-top:6px;cursor:pointer;border:none;padding:14px;text-align:center;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">' + (state.saved1a === 'saving' ? 'Wird angelegt …' : 'Kontakt anlegen') + '</button>' +
@@ -246,24 +318,7 @@
           nameBlock +
           orgFuncBlock +
           herkunftBlock +
-          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
-            '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Anschluss / Mehrwert</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#b8602a;letter-spacing:.5px">PFLICHT</span></div>' +
-            '<div style="font-size:14px;color:#8a8578;margin-top:6px;line-height:1.45;font-style:italic">Was kann sie für Kultur.Konvoi bedeuten — und umgekehrt?</div>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' + tagsHtml + '</div>' +
-          '</div>' +
-          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center"><div class="scs-lbl">Freigaben</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">NICHT ABLEITBAR</span></div>' +
-            '<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">' +
-              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Nennung<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
-              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Tagging<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
-              '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Foto / Film<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
-            '</div>' +
-            '<div style="font-size:11px;color:#8a8578;line-height:1.45;margin-top:10px">Freigaben ändern sich nur durch dokumentierte Bestätigung der Person — hier bewusst nicht antippbar.</div>' +
-          '</div>' +
-          '<div style="display:flex;gap:10px">' +
-            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Konfidenz</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="width:8px;height:8px;border-radius:999px;background:#c4873b;display:inline-block"></span><span style="font-size:13px;color:#1a1a18">teilweise offen</span></div></div>' +
-            '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Wiedervorlage</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18;margin-top:6px">08.09.2026</div></div>' +
-          '</div>' +
+          restBlock1a +
           saveBlock +
         '</div>' +
       '</div>';
@@ -625,14 +680,63 @@
       state.source1a = s;
       render();
     },
-    rescan1a: function () {
-      if (state.scanning1a) return;
-      state.scanning1a = true; render();
-      setTimeout(function () {
-        state.scanning1a = false;
-        state.scannedAt1a = 'gerade eben';
+    handleCardPhoto: function (file) {
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        state.scan1a.photo = e.target.result;
+        state.scan1a.status = 'scanning';
+        state.scan1a.progress = 0;
+        state.scan1a.errorMsg = '';
         render();
-      }, 900);
+        App._runOcr(e.target.result);
+      };
+      reader.onerror = function () {
+        state.scan1a.status = 'error';
+        state.scan1a.errorMsg = 'Foto konnte nicht gelesen werden — bitte erneut versuchen.';
+        render();
+      };
+      reader.readAsDataURL(file);
+    },
+    _tesseractLoading: null,
+    _ensureTesseract: function () {
+      if (window.Tesseract) return Promise.resolve();
+      if (App._tesseractLoading) return App._tesseractLoading;
+      App._tesseractLoading = new Promise(function (resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        s.onload = resolve;
+        s.onerror = function () { App._tesseractLoading = null; reject(new Error('load-failed')); };
+        document.head.appendChild(s);
+      });
+      return App._tesseractLoading;
+    },
+    _runOcr: function (dataUrl) {
+      App._ensureTesseract().then(function () {
+        return window.Tesseract.recognize(dataUrl, 'deu', {
+          logger: function (m) {
+            if (m.status === 'recognizing text' && typeof m.progress === 'number') {
+              state.scan1a.progress = Math.round(m.progress * 100);
+              render();
+            }
+          }
+        });
+      }).then(function (result) {
+        var parsed = parseCardText((result && result.data && result.data.text) || '');
+        state.manualFields1a.name = parsed.name;
+        state.manualFields1a.organisation = parsed.organisation;
+        state.manualFields1a.funktion = parsed.funktion;
+        state.scan1a.rawText = parsed.raw;
+        state.scan1a.status = 'done';
+        render();
+      }).catch(function (err) {
+        console.error('[OCR]', err);
+        state.scan1a.status = 'error';
+        state.scan1a.errorMsg = window.Tesseract ?
+          'Texterkennung fehlgeschlagen — bitte erneut versuchen oder manuell eingeben.' :
+          'Texterkennung braucht einmalig Internet zum Laden — bitte Verbindung prüfen und erneut versuchen.';
+        render();
+      });
     },
     updateManualField1a: function (key, value) { state.manualFields1a[key] = value; render(); },
     resetContact1a: function () {
@@ -641,8 +745,7 @@
       state.manualFields1a = { name: '', organisation: '', funktion: '', herkunft: '' };
       state.tags1a = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'];
       state.saved1a = 'idle';
-      state.scanning1a = false;
-      state.scannedAt1a = '21.08.2026 19:42';
+      state.scan1a = { status: 'idle', photo: null, rawText: '', progress: 0, errorMsg: '' };
       state.rec = 'done';
       state.sec = 38;
       render();
