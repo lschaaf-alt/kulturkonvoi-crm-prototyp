@@ -90,15 +90,18 @@
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.onresult = function (event) {
+      // Rebuild from the full results list every time (rather than appending
+      // incrementally by resultIndex) — some browsers re-report the whole
+      // finalized history on each event, which would otherwise double up.
       var finalText = '';
       var interim = '';
-      for (var i = event.resultIndex; i < event.results.length; i++) {
+      for (var i = 0; i < event.results.length; i++) {
         var res = event.results[i];
-        if (res.isFinal) finalText += res[0].transcript;
+        if (res.isFinal) finalText += res[0].transcript + ' ';
         else interim += res[0].transcript;
       }
-      if (finalText) state.transcript = (state.transcript + ' ' + finalText).trim();
-      state.interimTranscript = interim;
+      state.transcript = finalText.trim();
+      state.interimTranscript = interim.trim();
       render();
     };
     recognition.onerror = function (event) {
