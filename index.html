@@ -64,7 +64,8 @@
     taken1b: 'idle',
     scanning1a: false,
     scannedAt1a: '21.08.2026 19:42',
-    manualFields1a: { name: '', organisation: '', funktion: '' },
+    manualFields1a: { name: '', organisation: '', funktion: '', herkunft: '' },
+    note1c: '',
     notifs: [
       { id: 'wv', time: 'jetzt', title: 'Wiedervorlage fällig — Dr. Katrin Behrens', body: 'Rückmeldung nach dem Urlaub zugesagt. Letzte Interaktion 21.08.2026.', primary: 'Briefing öffnen', target: '1a' },
       { id: 'mail', time: 'vor 12 Min', title: '3 Follow-up-Mails warten auf Freigabe', body: 'Entwürfe aus Surprise Surprise, Landsberg. Kein Versand ohne Freigabe.', primary: 'Prüfen', target: '2b' },
@@ -200,6 +201,16 @@
         '</div>';
     }
 
+    var herkunftBlock = state.source1a === 'Manuell' ?
+      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+        '<div class="scs-lbl">Herkunft / Vermittler</div>' +
+        '<input type="text" value="' + esc(state.manualFields1a.herkunft) + '" placeholder="Optional: wie kam der Kontakt zustande?" onblur="App.updateManualField1a(\'herkunft\', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;color:#1a1a18;margin-top:4px;padding:0;font-family:inherit;outline:none">' +
+      '</div>'
+      :
+      '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
+        '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
+      '</div>';
+
     var tagsHtml = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'].map(function (t) {
       var on = state.tags1a.indexOf(t) !== -1;
       return '<button onclick="App.toggleTag1a(\'' + t.replace(/'/g, "\\'") + '\')" style="cursor:pointer;font-size:11px;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(45,90,61,.07)' : 'transparent') + ';border:1px solid ' + (on ? 'rgba(180,172,158,.4)' : 'rgba(180,172,158,.4)') + ';color:' + (on ? '#2d5a3d' : '#8a8578') + '">' + esc(t) + '</button>';
@@ -228,9 +239,7 @@
           srcBlock +
           nameBlock +
           orgFuncBlock +
-          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #2d5a3d">' +
-            '<div class="scs-lbl">Herkunft / Vermittler</div><div style="font-size:14px;color:#1a1a18;margin-top:4px;line-height:1.35">Michael Skurykhin · Surprise Surprise, 21.08.2026</div>' +
-          '</div>' +
+          herkunftBlock +
           '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
             '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Anschluss / Mehrwert</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#b8602a;letter-spacing:.5px">PFLICHT</span></div>' +
             '<div style="font-size:14px;color:#8a8578;margin-top:6px;line-height:1.45;font-style:italic">Was kann sie für Kultur.Konvoi bedeuten — und umgekehrt?</div>' +
@@ -350,13 +359,14 @@
       return '<button onclick="App.setRolle(\'' + r + '\')" style="flex:1;cursor:pointer;padding:9px 4px;border-radius:8px;font-size:12px;font-weight:600;letter-spacing:.2px;white-space:nowrap;background:' + (active ? '#2d5a3d' : 'transparent') + ';color:' + (active ? '#faf8f4' : '#3d3b36') + ';border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + '">' + r + '</button>';
     }).join('');
 
-    var stackHtml = state.stack.map(function (s) {
+    var stackHtml = state.stack.map(function (s, i) {
       var initials = s.name.split(' ').map(function (w) { return w[0]; }).join('');
       return '' +
         '<div style="display:flex;align-items:center;gap:11px;padding:11px 12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
           '<div style="width:34px;height:34px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:600;color:#faf8f4;background:' + s.tint + '">' + initials + '</div>' +
           '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600;color:#1a1a18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(s.name) + '</div><div style="font-size:11px;color:#8a8578;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(s.note) + '</div></div>' +
           '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;color:#8a8578;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 7px;flex-shrink:0">' + s.rolle + '</span>' +
+          '<button onclick="App.removeFromStack(' + i + ')" title="Aus Stapel entfernen" style="cursor:pointer;flex-shrink:0;width:26px;height:26px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#8a8578;font-size:13px">✕</button>' +
         '</div>';
     }).join('');
 
@@ -380,7 +390,7 @@
             }).join('') +
           '</div>' +
           '<div><div class="scs-lbl">Einordnung</div><div style="display:flex;gap:6px;margin-top:7px">' + rollenHtml + '</div></div>' +
-          '<div><div class="scs-lbl">Eine Zeile Kontext</div><div style="margin-top:6px;padding:11px 12px;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);border-radius:8px;font-size:13px;color:#8a8578;line-height:1.4">' + esc(noteLabel) + '</div></div>' +
+          '<div><div class="scs-lbl">Eine Zeile Kontext</div><input type="text" value="' + esc(state.note1c) + '" placeholder="' + esc(noteLabel) + '" onblur="App.updateNote1c(this.value)" style="display:block;margin-top:6px;padding:11px 12px;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);border-radius:8px;font-size:13px;color:#1a1a18;line-height:1.4;width:100%;font-family:inherit;box-sizing:border-box"></div>' +
           '<button onclick="App.addToStack()" style="border:none;cursor:pointer;padding:15px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">In den Stapel</button>' +
         '</div>' +
         '<div style="flex:1;overflow:auto;padding:14px 18px calc(env(safe-area-inset-bottom,20px) + 24px)">' +
@@ -574,6 +584,7 @@
     },
     setStatus: function (i, status) { state.fields[i].status = status; render(); },
     setRolle: function (r) { state.rolle = r; render(); },
+    updateNote1c: function (value) { state.note1c = value; render(); },
     addToStack: function () {
       var drafts = [
         { name: 'Katrin Behrens', note: 'Stadtwerke, VoiceOn Regionalstrom', tint: '#2d5a3d' },
@@ -581,10 +592,13 @@
         { name: 'Marija Petrenko', note: 'Übersetzung, Sensibilitätsflag', tint: '#8f4a1e' }
       ];
       var d = drafts[state.draftIdx % drafts.length];
-      state.stack.unshift({ name: d.name, note: d.note, tint: d.tint, rolle: state.rolle.toUpperCase() });
+      var note = state.note1c.trim() ? state.note1c.trim() : d.note;
+      state.stack.unshift({ name: d.name, note: note, tint: d.tint, rolle: state.rolle.toUpperCase() });
       state.draftIdx += 1;
+      state.note1c = '';
       render();
     },
+    removeFromStack: function (i) { state.stack.splice(i, 1); render(); },
     dropNotif: function (id) { state.notifs = state.notifs.filter(function (n) { return n.id !== id; }); render(); },
     openNotif: function (id) {
       var n = state.notifs.find(function (x) { return x.id === id; });
