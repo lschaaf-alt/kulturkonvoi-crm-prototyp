@@ -40,16 +40,12 @@
 
   var state = {
     route: 'home',
-    rec: 'done',
-    sec: 38,
-    fields: [
-      { label: 'Name', value: 'Dr. Katrin Behrens', quelle: 'IMPRESSUM · 21.08.2026', kind: 'belegt', status: 'confirmed' },
-      { label: 'Organisation', value: 'Stadtwerke Landsberg', quelle: 'WEBSITE · 21.08.2026', kind: 'belegt', status: 'confirmed' },
-      { label: 'Funktion', value: 'Leitung Kommunikation', quelle: 'LINKEDIN', kind: 'offen', warn: true, status: 'open' },
-      { label: 'Herkunft / Vermittler', value: 'über Michael Skurykhin, Surprise Surprise', quelle: 'SPRACHNOTIZ', kind: 'belegt', status: 'open' },
-      { label: 'Anschluss / Mehrwert', value: 'Möglicher VoiceOn-Gastgeber zum Thema Regionalstrom; Kultur.Konvoi bringt Bühne und Kommunen-Netzwerk.', quelle: 'CLAUDE-VORSCHLAG', kind: 'vorschlag', status: 'open' },
-      { label: 'Wiedervorlage', value: '08.09.2026 — meldet sich nach dem Urlaub', quelle: 'SPRACHNOTIZ', kind: 'belegt', status: 'open' }
-    ],
+    rec: 'idle',
+    sec: 0,
+    recError: '',
+    transcript: '',
+    interimTranscript: '',
+    fields: [],
     stack: [
       { name: 'Elena Wirth', note: 'Kulturamt, will Programmheft-Kooperation', rolle: 'LEAD', tint: '#2d5a3d' },
       { name: 'Tobias Renner', note: 'Fotograf, fragt nach Foto-Freigabe', rolle: 'PARTNER', tint: '#6b5c4a' },
@@ -83,6 +79,51 @@
   };
 
   var recTimer = null;
+  var recognition = null;
+
+  function getRecognition() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    if (recognition) return recognition;
+    recognition = new SR();
+    recognition.lang = 'de-DE';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = function (event) {
+      var finalText = '';
+      var interim = '';
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var res = event.results[i];
+        if (res.isFinal) finalText += res[0].transcript;
+        else interim += res[0].transcript;
+      }
+      if (finalText) state.transcript = (state.transcript + ' ' + finalText).trim();
+      state.interimTranscript = interim;
+      render();
+    };
+    recognition.onerror = function (event) {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      var messages = {
+        'not-allowed': 'Mikrofon-Zugriff wurde verweigert — bitte in den Browser-Einstellungen erlauben.',
+        'no-speech': 'Keine Sprache erkannt — bitte erneut versuchen und deutlich sprechen.',
+        'audio-capture': 'Kein Mikrofon gefunden.',
+        'network': 'Netzwerkfehler bei der Spracherkennung — bitte Verbindung prüfen.'
+      };
+      state.rec = 'error';
+      state.recError = messages[event.error] || ('Spracherkennung fehlgeschlagen (' + event.error + ').');
+      render();
+    };
+    recognition.onend = function () {
+      if (recTimer) { clearInterval(recTimer); recTimer = null; }
+      if (state.rec === 'recording') {
+        state.rec = state.transcript ? 'done' : 'error';
+        if (!state.transcript) state.recError = 'Keine Sprache erkannt — bitte erneut versuchen.';
+        else App._applySpeechExtraction();
+      }
+      render();
+    };
+    return recognition;
+  }
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
@@ -106,6 +147,47 @@
       organisation: remaining[2] || '',
       raw: lines.join('\n')
     };
+  }
+
+  function parseSpeechFields(rawText) {
+    var t = (rawText || '').trim();
+
+    var nameMatch = t.match(/(?:Dr\.|Prof\.|Herr|Frau)?\s*[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+/);
+    var name = nameMatch ? nameMatch[0].trim() : '';
+
+    var orgMatch =
+      t.match(/[A-ZÄÖÜ][\wäöüß]*(?:\s+[A-ZÄÖÜ][\wäöüß]*){0,3}\s?(?:GmbH|AG|e\.\s?V\.|KG)/) ||
+      t.match(/Stadtwerke[n]?\s+[A-ZÄÖÜ][a-zäöüß]+/) ||
+      t.match(/(?:bei|von (?:der|den)|für)\s+([A-ZÄÖÜ][\wäöüß]+(?:\s+[A-ZÄÖÜ][\wäöüß]+){0,2})/);
+    var organisation = orgMatch ? (orgMatch[1] || orgMatch[0]).trim() : '';
+
+    var funktionKeywords = ['Kommunikationsleitung', 'Geschäftsführ', 'Leitung', 'Referent', 'Vorstand', 'Pressesprecher', 'Marketingleit', 'Vertrieb', 'Berater', 'Manager', 'Sprecher'];
+    var funktion = '';
+    for (var i = 0; i < funktionKeywords.length; i++) {
+      var idx = t.indexOf(funktionKeywords[i]);
+      if (idx !== -1) {
+        var start = Math.max(0, idx - 12);
+        var end = Math.min(t.length, idx + funktionKeywords[i].length + 14);
+        funktion = t.slice(start, end).trim().replace(/^[a-zäöüß]+\s/, '');
+        break;
+      }
+    }
+
+    var herkunftMatch = t.match(/(?:kennt (?:den|die)\s+|über\s+|durch\s+|empfohlen von\s+)([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)/);
+    var herkunft = herkunftMatch ? herkunftMatch[0].trim() : '';
+
+    var months = 'Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember';
+    var dateMatch = t.match(new RegExp('(?:im|nächsten?|kommenden?)\\s+(?:' + months + ')[^.]{0,25}', 'i')) || t.match(/(?:nächste|kommende)\s+Woche[^.]{0,20}/i);
+    var wiedervorlage = dateMatch ? dateMatch[0].trim() : '';
+
+    return [
+      { label: 'Name', value: name, quelle: 'SPRACHNOTIZ', kind: name ? 'belegt' : 'offen', warn: !name, status: 'open' },
+      { label: 'Organisation', value: organisation, quelle: 'SPRACHNOTIZ', kind: organisation ? 'belegt' : 'offen', warn: !organisation, status: 'open' },
+      { label: 'Funktion', value: funktion, quelle: 'SPRACHNOTIZ', kind: funktion ? 'belegt' : 'offen', warn: !funktion, status: 'open' },
+      { label: 'Herkunft / Vermittler', value: herkunft, quelle: 'SPRACHNOTIZ', kind: herkunft ? 'belegt' : 'offen', warn: !herkunft, status: 'open' },
+      { label: 'Anschluss / Mehrwert', value: '', quelle: 'MANUELL ERGÄNZEN', kind: 'vorschlag', warn: true, status: 'open' },
+      { label: 'Wiedervorlage', value: wiedervorlage, quelle: 'SPRACHNOTIZ', kind: wiedervorlage ? 'belegt' : 'offen', warn: !wiedervorlage, status: 'open' }
+    ];
   }
 
   var toastTimer = null;
@@ -200,22 +282,32 @@
     } else if (state.source1a === 'Sprachnotiz') {
       var recording1a = state.rec === 'recording';
       var timer1a = String(Math.floor(state.sec / 60)).padStart(2, '0') + ':' + String(state.sec % 60).padStart(2, '0');
-      srcBlock = '' +
-        '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;display:flex;align-items:center;gap:14px">' +
-          '<button onclick="App.toggleRec()" style="width:52px;height:52px;border-radius:999px;border:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:' + (recording1a ? '#a04040' : '#1e3f2b') + ';animation:' + (recording1a ? 'rec-halo 1.6s ease-in-out infinite' : 'none') + '">' +
-            '<span style="width:16px;height:16px;border-radius:' + (recording1a ? '4px' : '999px') + ';background:#faf8f4;display:block"></span>' +
-          '</button>' +
-          '<div style="flex:1;min-width:0">' +
-            (recording1a ? waveformHtml(true) : '<div class="scs-lbl">Erkannt aus Sprachnotiz</div>') +
-            '<div style="font-size:11px;color:#8a8578;margin-top:6px">' + (recording1a ? ('Aufnahme läuft (' + timer1a + ') — Tippen beendet') : (state.sec > 0 ? ('Aufnahme beendet · ' + timer1a + ' · lokal transkribiert') : 'Tippen zum Aufnehmen')) + '</div>' +
+      var micBtn1a = '<button onclick="App.toggleRec()" style="width:52px;height:52px;border-radius:999px;border:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:' + (recording1a ? '#a04040' : '#1e3f2b') + ';animation:' + (recording1a ? 'rec-halo 1.6s ease-in-out infinite' : 'none') + '">' +
+        '<span style="width:16px;height:16px;border-radius:' + (recording1a ? '4px' : '999px') + ';background:#faf8f4;display:block"></span>' +
+      '</button>';
+      if (state.rec === 'error') {
+        srcBlock = '' +
+          '<div style="padding:12px 14px;background:rgba(160,64,64,.07);border:1px solid rgba(160,64,64,.35);border-radius:10px">' +
+            '<div style="font-size:13px;font-weight:600;color:#1a1a18">' + esc(state.recError) + '</div>' +
+            '<button onclick="App.toggleRec()" style="margin-top:8px;cursor:pointer;padding:8px 12px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:12px;font-weight:600">Erneut versuchen</button>' +
+          '</div>';
+      } else {
+        srcBlock = '' +
+          '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;display:flex;align-items:center;gap:14px">' +
+            micBtn1a +
+            '<div style="flex:1;min-width:0">' +
+              (recording1a ? waveformHtml(true) : (state.rec === 'done' ? '<div class="scs-lbl">Aus Sprachnotiz erkannt</div>' : '<div class="scs-lbl">Bereit zur Aufnahme</div>')) +
+              '<div style="font-size:11px;color:#8a8578;margin-top:6px">' + (recording1a ? ('Aufnahme läuft (' + timer1a + ') — Tippen beendet') : (state.rec === 'done' ? ('Aufnahme beendet · ' + timer1a) : 'Tippen zum Aufnehmen — echtes Mikrofon')) + '</div>' +
+            '</div>' +
           '</div>' +
-        '</div>';
+          (state.rec === 'done' && state.transcript ? '<div style="padding:9px 12px;background:#eae5d9;border-radius:8px;font-size:12px;color:#3d3b36;line-height:1.5;max-height:70px;overflow:auto">„' + esc(state.transcript) + '"</div>' : '');
+      }
     } else {
       srcBlock = '';
     }
 
-    var showEditable = state.source1a === 'Manuell' || (state.source1a === 'Visitenkarte' && state.scan1a.status === 'done');
-    var awaitingScan = state.source1a === 'Visitenkarte' && state.scan1a.status !== 'done';
+    var showEditable = state.source1a === 'Manuell' || (state.source1a === 'Visitenkarte' && state.scan1a.status === 'done') || (state.source1a === 'Sprachnotiz' && state.rec === 'done');
+    var awaitingScan = (state.source1a === 'Visitenkarte' && state.scan1a.status !== 'done') || (state.source1a === 'Sprachnotiz' && state.rec !== 'done');
 
     var nameBlock, orgFuncBlock, herkunftBlock;
     if (awaitingScan) {
@@ -263,7 +355,7 @@
       return '<button onclick="App.toggleTag1a(\'' + t.replace(/'/g, "\\'") + '\')" style="cursor:pointer;font-size:11px;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(45,90,61,.07)' : 'transparent') + ';border:1px solid ' + (on ? 'rgba(180,172,158,.4)' : 'rgba(180,172,158,.4)') + ';color:' + (on ? '#2d5a3d' : '#8a8578') + '">' + esc(t) + '</button>';
     }).join('');
 
-    var canSave1a = state.source1a !== 'Visitenkarte' || state.scan1a.status === 'done';
+    var canSave1a = !awaitingScan;
 
     var restBlock1a = awaitingScan ? '' :
       '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
@@ -298,8 +390,9 @@
           '</div>' +
         '</div>';
     } else if (!canSave1a) {
+      var gateMsg1a = state.source1a === 'Sprachnotiz' ? 'Erst Sprachnotiz aufnehmen' : 'Erst Visitenkarte fotografieren';
       saveBlock = '' +
-        '<div style="margin-top:6px;padding:13px;text-align:center;background:#eae5d9;color:#8a8578;border-radius:10px;font-size:14px;font-weight:600">Erst Visitenkarte fotografieren</div>';
+        '<div style="margin-top:6px;padding:13px;text-align:center;background:#eae5d9;color:#8a8578;border-radius:10px;font-size:14px;font-weight:600">' + gateMsg1a + '</div>';
     } else {
       saveBlock = '' +
         '<button onclick="App.saveContact1a()" style="margin-top:6px;cursor:pointer;border:none;padding:14px;text-align:center;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">' + (state.saved1a === 'saving' ? 'Wird angelegt …' : 'Kontakt anlegen') + '</button>' +
@@ -338,6 +431,7 @@
     var confirmed = state.fields.filter(function (f) { return f.status === 'confirmed'; }).length;
     var countLabel = confirmed + ' von ' + state.fields.length;
     var timer = String(Math.floor(state.sec / 60)).padStart(2, '0') + ':' + String(state.sec % 60).padStart(2, '0');
+    var canTake1b = state.fields.length > 0;
 
     var fieldsHtml = state.fields.map(function (f, i) {
       var accent = f.status === 'rejected' ? ACC.faint : ACC[f.kind];
@@ -354,12 +448,15 @@
       } else if (f.status === 'rejected') {
         actions = '<button onclick="App.setStatus(' + i + ',\'open\')" style="width:34px;height:34px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#8a8578;font-size:14px;cursor:pointer;flex-shrink:0">↺</button>';
       }
+      var valueHtml = f.status === 'open' ?
+        '<input type="text" value="' + esc(f.value) + '" placeholder="Nicht erkannt — bitte ergänzen" onblur="App.updateFieldValue(' + i + ', this.value)" style="display:block;width:100%;border:none;background:transparent;font-size:14px;line-height:1.4;color:#1a1a18;margin-top:3px;padding:0;font-family:inherit;outline:none">' :
+        '<div style="font-size:14px;line-height:1.4;color:#1a1a18;margin-top:3px">' + (f.value ? esc(f.value) : '<span style="color:#8a8578;font-style:italic">nicht ergänzt</span>') + '</div>';
       return '' +
         '<div style="display:flex;gap:11px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:flex-start;opacity:' + op + '">' +
           '<div style="width:3px;align-self:stretch;border-radius:2px;flex-shrink:0;background:' + accent + '"></div>' +
           '<div style="flex:1;min-width:0">' +
             '<div class="scs-lbl">' + esc(f.label) + '</div>' +
-            '<div style="font-size:14px;line-height:1.4;color:#1a1a18;margin-top:3px">' + esc(f.value) + '</div>' +
+            valueHtml +
             '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">' +
               '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;letter-spacing:.5px;color:#8a8578;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 7px">' + esc(f.quelle) + '</span>' +
               (warn ? '<span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#c4873b;letter-spacing:.5px">TEILWEISE OFFEN</span>' : '') +
@@ -368,37 +465,68 @@
           actions +
         '</div>';
     }).join('');
+    if (!state.fields.length && state.rec !== 'recording') {
+      fieldsHtml = '<div style="padding:16px;border:1px dashed #b8b2a6;border-radius:10px;text-align:center;font-size:12.5px;color:#8a8578;line-height:1.5">Noch keine Aufnahme — auf den Mikro-Button tippen und drauflos sprechen.</div>';
+    }
 
-    return '' +
-      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
-        backBar('Sprachnotiz erfassen') +
+    var micBlock;
+    if (state.rec === 'error') {
+      micBlock = '' +
+        '<div style="padding:14px 18px;border-bottom:1px solid rgba(180,172,158,.4)">' +
+          '<div style="padding:12px 14px;background:rgba(160,64,64,.07);border:1px solid rgba(160,64,64,.35);border-radius:10px;display:flex;gap:10px;align-items:flex-start">' +
+            '<span style="color:#a04040;font-size:14px;line-height:1.3">⚠</span>' +
+            '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + esc(state.recError) + '</div>' +
+              '<button onclick="App.toggleRec()" style="margin-top:8px;cursor:pointer;padding:8px 12px;border-radius:8px;border:1px solid rgba(180,172,158,.4);background:transparent;color:#3d3b36;font-size:12px;font-weight:600">Erneut versuchen</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      micBlock = '' +
         '<div style="padding:14px 18px;display:flex;align-items:center;gap:16px;border-bottom:1px solid rgba(180,172,158,.4)">' +
           '<button onclick="App.toggleRec()" style="width:66px;height:66px;border-radius:999px;border:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;background:' + (recording ? '#a04040' : '#1e3f2b') + ';animation:' + (recording ? 'rec-halo 1.6s ease-in-out infinite' : 'none') + '">' +
             '<span style="width:20px;height:20px;border-radius:' + (recording ? '4px' : '999px') + ';background:#faf8f4;display:block"></span>' +
           '</button>' +
           '<div style="flex:1;min-width:0">' + waveformHtml(recording) +
-            '<div style="font-size:11px;color:#8a8578;margin-top:8px">' + (recording ? 'Aufnahme läuft — Tippen beendet' : ('Aufnahme beendet · ' + timer + ' · lokal transkribiert')) + '</div>' +
+            '<div style="font-size:11px;color:#8a8578;margin-top:8px">' + (recording ? ('Aufnahme läuft (' + timer + ') — Tippen beendet, echtes Mikrofon') : (state.rec === 'done' ? ('Aufnahme beendet · ' + timer) : 'Tippen zum Aufnehmen — echtes Mikrofon')) + '</div>' +
           '</div>' +
-        '</div>' +
+        '</div>';
+    }
+
+    var transcriptText = state.transcript + (state.interimTranscript ? (' ' + state.interimTranscript) : '');
+    var transcriptBlock = transcriptText ?
+      '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px">' +
+        '<div class="scs-lbl">Transkript</div>' +
+        '<div style="font-size:13px;line-height:1.55;color:#3d3b36;margin-top:6px">„' + esc(state.transcript) + (state.interimTranscript ? '<span style="opacity:.55;font-style:italic"> ' + esc(state.interimTranscript) + '</span>' : '') + '"</div>' +
+      '</div>'
+      :
+      '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px">' +
+        '<div class="scs-lbl">Transkript</div>' +
+        '<div style="font-size:13px;line-height:1.55;color:#8a8578;margin-top:6px;font-style:italic">' + (recording ? 'Höre zu …' : 'Noch kein Text — Aufnahme starten') + '</div>' +
+      '</div>';
+
+    return '' +
+      '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
+        backBar('Sprachnotiz erfassen') +
+        micBlock +
         '<div style="flex:1;overflow:auto;padding:14px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
-          '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px">' +
-            '<div class="scs-lbl">Transkript</div>' +
-            '<div style="font-size:13px;line-height:1.55;color:#3d3b36;margin-top:6px">„… hab lang mit der Katrin von den Stadtwerken Landsberg geredet, kennt den Michael, Kommunikationsleitung. Will im September nochmal sprechen, Thema VoiceOn zu Regionalstrom …"</div>' +
-          '</div>' +
-          '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:4px"><div class="scs-lbl">Vorschläge</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36">' + countLabel + '</span></div>' +
+          transcriptBlock +
+          '<div style="display:flex;align-items:baseline;justify-content:space-between;margin-top:4px"><div class="scs-lbl">Vorschläge</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36">' + (state.fields.length ? countLabel : '') + '</span></div>' +
           fieldsHtml +
-          '<div style="padding:12px 14px;background:rgba(196,135,59,.07);border:1px solid rgba(196,135,59,.35);border-radius:10px">' +
-            '<div style="display:flex;gap:9px;align-items:flex-start"><span style="color:#c4873b;font-size:14px;line-height:1.2">⚠</span>' +
-              '<div><div style="font-size:13px;font-weight:600;color:#1a1a18">Freigaben bleiben offen</div><div style="font-size:12px;line-height:1.45;color:#3d3b36;margin-top:3px">Nennung, Tagging und Foto/Film sind aus Recherche nicht ableitbar. Bitte holen Sie die Bestätigung direkt ein.</div></div>' +
-            '</div>' +
-          '</div>' +
+          (state.fields.length ?
+            '<div style="padding:12px 14px;background:rgba(196,135,59,.07);border:1px solid rgba(196,135,59,.35);border-radius:10px">' +
+              '<div style="display:flex;gap:9px;align-items:flex-start"><span style="color:#c4873b;font-size:14px;line-height:1.2">⚠</span>' +
+                '<div><div style="font-size:13px;font-weight:600;color:#1a1a18">Freigaben bleiben offen</div><div style="font-size:12px;line-height:1.45;color:#3d3b36;margin-top:3px">Nennung, Tagging und Foto/Film sind aus Recherche nicht ableitbar. Bitte holen Sie die Bestätigung direkt ein.</div></div>' +
+              '</div>' +
+            '</div>' : '') +
         '</div>' +
         '<div style="padding:12px 18px calc(env(safe-area-inset-bottom,20px) + 14px);background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-top:1px solid rgba(180,172,158,.4)">' +
           (state.taken1b === 'taken' ?
-            '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">Übernommen und protokolliert</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 gesetzt</div></div><button onclick="App.nav(\'home\')" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Übersicht</button></div>'
+            '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">Übernommen und protokolliert</div><div style="font-size:11px;color:#8a8578">Wiedervorlage gesetzt</div></div><button onclick="App.nav(\'home\')" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Übersicht</button></div>'
+            : !canTake1b ?
+            '<div style="padding:13px;text-align:center;background:#eae5d9;color:#8a8578;border-radius:10px;font-size:13px;font-weight:600">Erst Sprachnotiz aufnehmen</div>'
             :
             '<div style="display:flex;align-items:center;gap:12px">' +
-              '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + countLabel + ' bestätigt</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 wird gesetzt</div></div>' +
+              '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + countLabel + ' bestätigt</div><div style="font-size:11px;color:#8a8578">Unbestätigte Felder bleiben offen</div></div>' +
               '<button onclick="App.takeOver1b()" style="cursor:pointer;border:none;padding:13px 18px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:14px;font-weight:600">' + (state.taken1b === 'taking' ? 'Übernimmt …' : 'Übernehmen') + '</button>' +
             '</div>'
           ) +
@@ -629,21 +757,51 @@
   window.App = {
     nav: function (route) {
       var keepRecording = route === '1b' || (route === '1a' && state.source1a === 'Sprachnotiz');
-      if (!keepRecording && recTimer) { clearInterval(recTimer); recTimer = null; }
+      if (!keepRecording && state.rec === 'recording' && recognition) { recognition.stop(); }
       state.route = route;
       render();
     },
     toggleRec: function () {
-      if (recTimer) { clearInterval(recTimer); recTimer = null; }
-      if (state.rec === 'recording') { state.rec = 'done'; render(); return; }
-      state.rec = 'recording'; state.sec = 0; render();
-      recTimer = setInterval(function () {
-        if (state.sec >= 38) { clearInterval(recTimer); recTimer = null; state.rec = 'done'; state.sec = 38; }
-        else { state.sec += 1; }
+      if (state.rec === 'recording') {
+        if (recognition) recognition.stop();
+        return;
+      }
+      var rec = getRecognition();
+      if (!rec) {
+        state.rec = 'error';
+        state.recError = 'Spracherkennung wird von diesem Browser nicht unterstützt (funktioniert in Chrome/Edge auf Android und Desktop; nicht in Safari/iPhone oder Firefox).';
         render();
-      }, 220);
+        return;
+      }
+      state.transcript = '';
+      state.interimTranscript = '';
+      state.recError = '';
+      state.fields = [];
+      state.rec = 'recording';
+      state.sec = 0;
+      render();
+      recTimer = setInterval(function () { state.sec += 1; render(); }, 1000);
+      try {
+        rec.start();
+      } catch (e) {
+        if (recTimer) { clearInterval(recTimer); recTimer = null; }
+        state.rec = 'error';
+        state.recError = 'Aufnahme konnte nicht gestartet werden — bitte erneut versuchen.';
+        render();
+      }
     },
     setStatus: function (i, status) { state.fields[i].status = status; render(); },
+    updateFieldValue: function (i, value) { state.fields[i].value = value; state.fields[i].warn = !value; render(); },
+    _applySpeechExtraction: function () {
+      var fields = parseSpeechFields(state.transcript);
+      state.fields = fields;
+      var byLabel = {};
+      fields.forEach(function (f) { byLabel[f.label] = f.value; });
+      if (byLabel['Name']) state.manualFields1a.name = byLabel['Name'];
+      if (byLabel['Organisation']) state.manualFields1a.organisation = byLabel['Organisation'];
+      if (byLabel['Funktion']) state.manualFields1a.funktion = byLabel['Funktion'];
+      if (byLabel['Herkunft / Vermittler']) state.manualFields1a.herkunft = byLabel['Herkunft / Vermittler'];
+    },
     setRolle: function (r) { state.rolle = r; render(); },
     updateNote1c: function (value) { state.note1c = value; render(); },
     addToStack: function () {
@@ -676,7 +834,7 @@
       showToast('Automatischer Versand ist bewusst gesperrt — jede Mail braucht eine dokumentierte Freigabe.');
     },
     setSource1a: function (s) {
-      if (s !== 'Sprachnotiz' && recTimer) { clearInterval(recTimer); recTimer = null; state.rec = 'done'; }
+      if (s !== 'Sprachnotiz' && state.rec === 'recording' && recognition) { recognition.stop(); }
       state.source1a = s;
       render();
     },
@@ -740,14 +898,19 @@
     },
     updateManualField1a: function (key, value) { state.manualFields1a[key] = value; render(); },
     resetContact1a: function () {
+      if (state.rec === 'recording' && recognition) { recognition.stop(); }
       if (recTimer) { clearInterval(recTimer); recTimer = null; }
       state.source1a = 'Visitenkarte';
       state.manualFields1a = { name: '', organisation: '', funktion: '', herkunft: '' };
       state.tags1a = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'];
       state.saved1a = 'idle';
       state.scan1a = { status: 'idle', photo: null, rawText: '', progress: 0, errorMsg: '' };
-      state.rec = 'done';
-      state.sec = 38;
+      state.rec = 'idle';
+      state.sec = 0;
+      state.transcript = '';
+      state.interimTranscript = '';
+      state.recError = '';
+      state.fields = [];
       render();
       showToast('Neues Kontaktformular gestartet.');
     },
