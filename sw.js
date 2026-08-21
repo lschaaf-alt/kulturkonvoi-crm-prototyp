@@ -1,4 +1,4 @@
-const CACHE = 'kk-crm-v1';
+const CACHE = 'kk-crm-v2';
 const SHELL = [
   './',
   './index.html',
@@ -24,6 +24,21 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // HTML navigations: network-first, so app updates show up immediately.
+  // Falls back to the cached shell only when offline.
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+        return res;
+      }).catch(() => caches.match(event.request).then((c) => c || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Everything else (css/js/icons): cache-first for offline reliability.
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
