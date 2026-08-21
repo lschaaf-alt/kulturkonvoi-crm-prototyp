@@ -25,10 +25,13 @@
   .kk-card{display:flex;flex-direction:column;gap:6px;padding:16px;border-radius:14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-left:4px solid var(--accent, #2d5a3d);text-align:left;cursor:pointer}
   .kk-card:active{background:#eae5d9}
   .kk-back{display:flex;align-items:center;gap:8px;cursor:pointer;color:#8a8578;font-size:14px;background:none;border:none;padding:0}
+  .kk-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);background:#1a1a18;color:#faf8f4;padding:11px 18px;border-radius:999px;font-size:12.5px;font-weight:600;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.28);opacity:0;pointer-events:none;transition:opacity 220ms ease,transform 220ms ease;z-index:9999;max-width:84vw;text-align:center}
+  .kk-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="toast" class="kk-toast"></div>
 <script>
 (function () {
   "use strict";
@@ -54,10 +57,15 @@
     ],
     draftIdx: 0,
     rolle: 'Lead',
+    captureMode1c: 'Visitenkarte',
+    source1a: 'Visitenkarte',
+    tags1a: ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'],
+    saved1a: 'idle',
+    taken1b: 'idle',
     notifs: [
-      { id: 'wv', time: 'jetzt', title: 'Wiedervorlage fällig — Dr. Katrin Behrens', body: 'Rückmeldung nach dem Urlaub zugesagt. Letzte Interaktion 21.08.2026.', primary: 'Briefing öffnen' },
-      { id: 'mail', time: 'vor 12 Min', title: '3 Follow-up-Mails warten auf Freigabe', body: 'Entwürfe aus Surprise Surprise, Landsberg. Kein Versand ohne Freigabe.', primary: 'Prüfen' },
-      { id: 'lauf', time: '08:00', title: 'Wochenlauf', body: '5 Wiedervorlagen fällig, 2 überfällig, 1 mögliche Dublette.', primary: 'Liste öffnen' }
+      { id: 'wv', time: 'jetzt', title: 'Wiedervorlage fällig — Dr. Katrin Behrens', body: 'Rückmeldung nach dem Urlaub zugesagt. Letzte Interaktion 21.08.2026.', primary: 'Briefing öffnen', target: '1a' },
+      { id: 'mail', time: 'vor 12 Min', title: '3 Follow-up-Mails warten auf Freigabe', body: 'Entwürfe aus Surprise Surprise, Landsberg. Kein Versand ohne Freigabe.', primary: 'Prüfen', target: '2b' },
+      { id: 'lauf', time: '08:00', title: 'Wochenlauf', body: '5 Wiedervorlagen fällig, 2 überfällig, 1 mögliche Dublette.', primary: 'Liste öffnen', target: null }
     ],
     tone: 'Knapp',
     activeBlocks: ['Bezug aufs Gespräch', 'VoiceOn-Anschluss'],
@@ -77,6 +85,16 @@
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  var toastTimer = null;
+  function showToast(msg) {
+    var el = document.getElementById('toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, 2800);
   }
 
   function backBar(title) {
@@ -118,19 +136,46 @@
       '</div>';
   }
 
+  var SOURCE1A_INFO = {
+    'Visitenkarte': { badge: 'FOTO<br>VK', label: 'Erkannt aus Visitenkarte', meta: '8 Felder · 21.08.2026 19:42' },
+    'Sprachnotiz': { badge: 'AUDIO', label: 'Erkannt aus Sprachnotiz', meta: '6 Felder · 21.08.2026 19:44 · 00:38' },
+    'Manuell': { badge: '✎', label: 'Manuell erfasst', meta: 'Eingabe durch dich · 21.08.2026' }
+  };
+
   function screen1a() {
+    var sourceTabsHtml = ['Visitenkarte', 'Sprachnotiz', 'Manuell'].map(function (s) {
+      var active = state.source1a === s;
+      return '<button onclick="App.setSource1a(\'' + s + '\')" style="flex:1;cursor:pointer;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:600;border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + ';background:' + (active ? '#2d5a3d' : 'rgba(250,248,244,.7)') + ';color:' + (active ? '#faf8f4' : '#3d3b36') + '">' + s + '</button>';
+    }).join('');
+    var srcInfo = SOURCE1A_INFO[state.source1a];
+
+    var tagsHtml = ['VoiceOn-Gastgeber', 'Netzwerk Kommunen', 'Sponsoring-Lead'].map(function (t) {
+      var on = state.tags1a.indexOf(t) !== -1;
+      return '<button onclick="App.toggleTag1a(\'' + t.replace(/'/g, "\\'") + '\')" style="cursor:pointer;font-size:11px;padding:5px 9px;border-radius:999px;background:' + (on ? 'rgba(45,90,61,.07)' : 'transparent') + ';border:1px solid ' + (on ? 'rgba(180,172,158,.4)' : 'rgba(180,172,158,.4)') + ';color:' + (on ? '#2d5a3d' : '#8a8578') + '">' + esc(t) + '</button>';
+    }).join('');
+
+    var saveBlock;
+    if (state.saved1a === 'saved') {
+      saveBlock = '' +
+        '<div style="margin-top:6px;padding:14px;background:rgba(45,90,61,.07);border:1px solid rgba(45,90,61,.35);border-radius:10px">' +
+          '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="font-size:13.5px;font-weight:600;color:#1a1a18">Kontakt angelegt und protokolliert</div></div>' +
+          '<div style="font-family:\'JetBrains Mono\',monospace;font-size:10.5px;line-height:1.6;color:#3d3b36;margin-top:9px">21.08.2026 · KONTAKT ANGELEGT · P-0418 BEHRENS</div>' +
+          '<button onclick="App.nav(\'home\')" style="margin-top:10px;cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Zur Übersicht</button>' +
+        '</div>';
+    } else {
+      saveBlock = '' +
+        '<button onclick="App.saveContact1a()" style="margin-top:6px;cursor:pointer;border:none;padding:14px;text-align:center;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">' + (state.saved1a === 'saving' ? 'Wird angelegt …' : 'Kontakt anlegen') + '</button>' +
+        '<div style="text-align:center;font-size:11px;color:#8a8578;margin-top:2px">Interaktion wird mit protokolliert</div>';
+    }
+
     return '' +
       '<div style="min-height:100dvh;display:flex;flex-direction:column;background:#f4f1ea">' +
         backBar('Neuer Kontakt') +
         '<div style="flex:1;padding:16px 18px calc(env(safe-area-inset-bottom,20px) + 24px);display:flex;flex-direction:column;gap:10px">' +
-          '<div style="display:flex;gap:6px">' +
-            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:#2d5a3d;color:#faf8f4;font-size:11px;font-weight:600">Visitenkarte</div>' +
-            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:rgba(250,248,244,.7);border:1px solid rgba(180,172,158,.4);color:#3d3b36;font-size:11px">Sprachnotiz</div>' +
-            '<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:rgba(250,248,244,.7);border:1px solid rgba(180,172,158,.4);color:#3d3b36;font-size:11px">Manuell</div>' +
-          '</div>' +
+          '<div style="display:flex;gap:6px">' + sourceTabsHtml + '</div>' +
           '<div style="display:flex;gap:12px;padding:12px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;align-items:center">' +
-            '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">FOTO<br>VK</div>' +
-            '<div style="flex:1"><div class="scs-lbl">Erkannt aus Visitenkarte</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">8 Felder · 21.08.2026 19:42</div></div>' +
+            '<div style="width:58px;height:40px;border-radius:6px;background:#eae5d9;border:1px dashed #d5cfc3;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:8px;color:#8a8578;text-align:center;line-height:1.2">' + srcInfo.badge + '</div>' +
+            '<div style="flex:1"><div class="scs-lbl">' + srcInfo.label + '</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;color:#3d3b36;margin-top:4px">' + srcInfo.meta + '</div></div>' +
           '</div>' +
           '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
             '<div class="scs-lbl">Name</div><div style="font-size:17px;font-weight:600;color:#1a1a18;margin-top:4px">Dr. Katrin Behrens</div>' +
@@ -146,11 +191,7 @@
           '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(184,96,42,.45);border-radius:10px;border-left:3px solid #b8602a">' +
             '<div style="display:flex;justify-content:space-between;align-items:baseline"><div class="scs-lbl">Anschluss / Mehrwert</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#b8602a;letter-spacing:.5px">PFLICHT</span></div>' +
             '<div style="font-size:14px;color:#8a8578;margin-top:6px;line-height:1.45;font-style:italic">Was kann sie für Kultur.Konvoi bedeuten — und umgekehrt?</div>' +
-            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' +
-              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">VoiceOn-Gastgeber</span>' +
-              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">Netzwerk Kommunen</span>' +
-              '<span style="font-size:11px;padding:5px 9px;border-radius:999px;background:rgba(45,90,61,.07);border:1px solid rgba(180,172,158,.4);color:#2d5a3d">Sponsoring-Lead</span>' +
-            '</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">' + tagsHtml + '</div>' +
           '</div>' +
           '<div style="padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px">' +
             '<div style="display:flex;justify-content:space-between;align-items:center"><div class="scs-lbl">Freigaben</div><span style="font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">NICHT ABLEITBAR</span></div>' +
@@ -159,14 +200,13 @@
               '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Tagging<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
               '<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;color:#3d3b36">Foto / Film<span style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:#b8b2a6;border:1px solid rgba(180,172,158,.4);border-radius:999px;padding:2px 8px">OFFEN</span></div>' +
             '</div>' +
-            '<div style="font-size:11px;color:#8a8578;line-height:1.45;margin-top:10px">Freigaben ändern sich nur durch dokumentierte Bestätigung der Person.</div>' +
+            '<div style="font-size:11px;color:#8a8578;line-height:1.45;margin-top:10px">Freigaben ändern sich nur durch dokumentierte Bestätigung der Person — hier bewusst nicht antippbar.</div>' +
           '</div>' +
           '<div style="display:flex;gap:10px">' +
             '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Konfidenz</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="width:8px;height:8px;border-radius:999px;background:#c4873b;display:inline-block"></span><span style="font-size:13px;color:#1a1a18">teilweise offen</span></div></div>' +
             '<div style="flex:1;padding:12px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px"><div class="scs-lbl">Wiedervorlage</div><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;color:#1a1a18;margin-top:6px">08.09.2026</div></div>' +
           '</div>' +
-          '<div style="margin-top:6px;padding:14px;text-align:center;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:15px;font-weight:600">Kontakt anlegen</div>' +
-          '<div style="text-align:center;font-size:11px;color:#8a8578;margin-top:2px">Interaktion wird mit protokolliert</div>' +
+          saveBlock +
         '</div>' +
       '</div>';
   }
@@ -241,10 +281,14 @@
           '</div>' +
         '</div>' +
         '<div style="padding:12px 18px calc(env(safe-area-inset-bottom,20px) + 14px);background:rgba(250,248,244,.92);backdrop-filter:blur(24px);border-top:1px solid rgba(180,172,158,.4)">' +
-          '<div style="display:flex;align-items:center;gap:12px">' +
-            '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + countLabel + ' bestätigt</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 wird gesetzt</div></div>' +
-            '<div style="padding:13px 18px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:14px;font-weight:600">Übernehmen</div>' +
-          '</div>' +
+          (state.taken1b === 'taken' ?
+            '<div style="display:flex;align-items:center;gap:9px"><span style="width:22px;height:22px;border-radius:999px;background:#2d5a3d;color:#faf8f4;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✓</span><div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">Übernommen und protokolliert</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 gesetzt</div></div><button onclick="App.nav(\'home\')" style="cursor:pointer;background:transparent;border:none;padding:0;font-size:12px;font-weight:600;color:#2d5a3d">Übersicht</button></div>'
+            :
+            '<div style="display:flex;align-items:center;gap:12px">' +
+              '<div style="flex:1"><div style="font-size:13px;font-weight:600;color:#1a1a18">' + countLabel + ' bestätigt</div><div style="font-size:11px;color:#8a8578">Wiedervorlage 08.09.2026 wird gesetzt</div></div>' +
+              '<button onclick="App.takeOver1b()" style="cursor:pointer;border:none;padding:13px 18px;background:#2d5a3d;color:#faf8f4;border-radius:10px;font-size:14px;font-weight:600">' + (state.taken1b === 'taking' ? 'Übernimmt …' : 'Übernehmen') + '</button>' +
+            '</div>'
+          ) +
         '</div>' +
       '</div>';
   }
@@ -285,11 +329,12 @@
           '<div style="display:flex;align-items:baseline;gap:8px;margin-top:10px"><span style="font-family:\'JetBrains Mono\',monospace;font-size:34px;font-weight:600;color:#faf8f4;line-height:1">' + String(state.stack.length).padStart(2, '0') + '</span><span style="font-size:12px;color:rgba(250,248,244,.65)">Begegnungen erfasst</span></div>' +
         '</div>' +
         '<div style="padding:16px 18px;display:flex;flex-direction:column;gap:12px;background:#faf8f4;border-bottom:1px solid rgba(180,172,158,.4)">' +
-          '<div><div class="scs-lbl">Name</div><div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding-bottom:8px;border-bottom:1.5px solid #d5cfc3"><span style="font-size:19px;color:#1a1a18;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(draftName) + '</span><span style="width:30px;height:30px;border-radius:8px;background:#eae5d9;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">VK</span></div></div>' +
+          '<div><div class="scs-lbl">Name</div><div style="display:flex;align-items:center;gap:10px;margin-top:6px;padding-bottom:8px;border-bottom:1.5px solid #d5cfc3"><span style="font-size:19px;color:#1a1a18;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(draftName) + '</span><span style="width:30px;height:30px;border-radius:8px;background:#eae5d9;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:9px;color:#8a8578">' + ({ 'Visitenkarte': 'VK', 'Sprachnotiz': 'SN', 'Gästeliste': 'GL' }[state.captureMode1c]) + '</span></div></div>' +
           '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
-            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Visitenkarte</span>' +
-            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Sprachnotiz</span>' +
-            '<span style="font-size:11px;padding:5px 9px;border-radius:999px;color:#3d3b36;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);white-space:nowrap">Gästeliste</span>' +
+            ['Visitenkarte', 'Sprachnotiz', 'Gästeliste'].map(function (m) {
+              var active = state.captureMode1c === m;
+              return '<button onclick="App.setCaptureMode1c(\'' + m + '\')" style="cursor:pointer;font-size:11px;padding:5px 9px;border-radius:999px;color:' + (active ? '#faf8f4' : '#3d3b36') + ';background:' + (active ? '#2d5a3d' : '#f4f1ea') + ';border:1px solid ' + (active ? '#2d5a3d' : 'rgba(180,172,158,.4)') + ';white-space:nowrap">' + m + '</button>';
+            }).join('') +
           '</div>' +
           '<div><div class="scs-lbl">Einordnung</div><div style="display:flex;gap:6px;margin-top:7px">' + rollenHtml + '</div></div>' +
           '<div><div class="scs-lbl">Eine Zeile Kontext</div><div style="margin-top:6px;padding:11px 12px;background:#f4f1ea;border:1px solid rgba(180,172,158,.4);border-radius:8px;font-size:13px;color:#8a8578;line-height:1.4">' + esc(noteLabel) + '</div></div>' +
@@ -305,19 +350,22 @@
 
   function screen2a() {
     var notifsHtml = state.notifs.map(function (n) {
+      var actions = n.snoozed ?
+        '<button onclick="App.snoozeNotif(\'' + n.id + '\')" style="width:100%;cursor:pointer;padding:9px;border-radius:8px;background:transparent;border:1px solid rgba(250,248,244,.35);color:rgba(250,248,244,.85);font-size:12px;font-weight:600;margin-top:12px">↺ Wieder anzeigen</button>' :
+        '<div style="display:flex;gap:8px;margin-top:12px">' +
+          '<button onclick="App.openNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;border:none;background:#faf8f4;color:#1e3f2b;font-size:12px;font-weight:600">' + esc(n.primary) + '</button>' +
+          '<button onclick="App.snoozeNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;background:transparent;border:1px solid rgba(250,248,244,.35);color:rgba(250,248,244,.85);font-size:12px;font-weight:600">Später</button>' +
+        '</div>';
       return '' +
-        '<div style="padding:13px 14px;border-radius:14px;background:rgba(250,248,244,.14);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12)">' +
+        '<div style="padding:13px 14px;border-radius:14px;background:rgba(250,248,244,.14);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.12);opacity:' + (n.snoozed ? 0.55 : 1) + '">' +
           '<div style="display:flex;align-items:center;gap:8px">' +
             '<span style="width:18px;height:18px;border-radius:5px;background:#faf8f4;display:flex;align-items:center;justify-content:center;font-family:\'JetBrains Mono\',monospace;font-size:9px;font-weight:700;color:#1e3f2b">KK</span>' +
             '<span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:rgba(250,248,244,.65)">Kultur.Konvoi</span>' +
-            '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:rgba(250,248,244,.55)">' + esc(n.time) + '</span>' +
+            '<span style="margin-left:auto;font-family:\'JetBrains Mono\',monospace;font-size:10px;color:rgba(250,248,244,.55)">' + (n.snoozed ? 'vertagt' : esc(n.time)) + '</span>' +
           '</div>' +
           '<div style="font-size:14px;font-weight:600;color:#faf8f4;margin-top:9px;line-height:1.35">' + esc(n.title) + '</div>' +
           '<div style="font-size:13px;color:rgba(250,248,244,.72);margin-top:3px;line-height:1.45">' + esc(n.body) + '</div>' +
-          '<div style="display:flex;gap:8px;margin-top:12px">' +
-            '<button onclick="App.dropNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;border:none;background:#faf8f4;color:#1e3f2b;font-size:12px;font-weight:600">' + esc(n.primary) + '</button>' +
-            '<button onclick="App.dropNotif(\'' + n.id + '\')" style="flex:1;cursor:pointer;padding:9px;border-radius:8px;background:transparent;border:1px solid rgba(250,248,244,.35);color:rgba(250,248,244,.85);font-size:12px;font-weight:600">Später</button>' +
-          '</div>' +
+          actions +
         '</div>';
     }).join('');
     if (!state.notifs.length) {
@@ -449,7 +497,7 @@
           '<div style="padding:13px 14px;background:#faf8f4;border:1px solid rgba(180,172,158,.4);border-radius:10px;border-left:3px solid #a04040">' +
             '<div style="display:flex;align-items:center;gap:12px">' +
               '<div style="flex:1"><div style="font-size:14px;font-weight:600;color:#1a1a18">Automatisch senden</div><div style="font-size:11.5px;color:#8a8578;line-height:1.45;margin-top:2px">Gesperrt. Jede Mail braucht eine dokumentierte Freigabe.</div></div>' +
-              '<div style="width:46px;height:28px;border-radius:999px;background:#eae5d9;border:1px solid rgba(180,172,158,.4);position:relative;flex-shrink:0"><span style="position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:999px;background:#b8b2a6"></span></div>' +
+              '<button onclick="App.explainLocked()" style="cursor:pointer;width:46px;height:28px;border-radius:999px;background:#eae5d9;border:1px solid rgba(180,172,158,.4);position:relative;flex-shrink:0;padding:0"><span style="position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:999px;background:#b8b2a6"></span></button>' +
             '</div>' +
           '</div>' +
           '<div style="padding:12px 14px;background:#eae5d9;border-radius:10px;font-size:12px;line-height:1.5;color:#3d3b36">Postfach verbunden: <span style="font-family:\'JetBrains Mono\',monospace;font-size:11.5px">team@kulturkonvoi.de</span> · Signatur wird aus dem Postfach übernommen.</div>' +
@@ -494,6 +542,39 @@
       render();
     },
     dropNotif: function (id) { state.notifs = state.notifs.filter(function (n) { return n.id !== id; }); render(); },
+    openNotif: function (id) {
+      var n = state.notifs.find(function (x) { return x.id === id; });
+      if (!n) return;
+      state.notifs = state.notifs.filter(function (x) { return x.id !== id; });
+      if (n.target) { App.nav(n.target); }
+      else { render(); showToast('„Liste öffnen" ist in diesem Klick-Dummy nicht als eigener Screen ausgearbeitet.'); }
+    },
+    snoozeNotif: function (id) {
+      state.notifs = state.notifs.map(function (n) { return n.id === id ? Object.assign({}, n, { snoozed: !n.snoozed }) : n; });
+      render();
+    },
+    explainLocked: function () {
+      showToast('Automatischer Versand ist bewusst gesperrt — jede Mail braucht eine dokumentierte Freigabe.');
+    },
+    setSource1a: function (s) { state.source1a = s; render(); },
+    toggleTag1a: function (t) {
+      var idx = state.tags1a.indexOf(t);
+      if (idx === -1) state.tags1a.push(t); else state.tags1a.splice(idx, 1);
+      render();
+    },
+    saveContact1a: function () {
+      if (state.saved1a === 'saving') return;
+      if (state.saved1a === 'saved') { App.nav('home'); return; }
+      state.saved1a = 'saving'; render();
+      setTimeout(function () { state.saved1a = 'saved'; render(); }, 700);
+    },
+    takeOver1b: function () {
+      if (state.taken1b === 'taking') return;
+      if (state.taken1b === 'taken') { App.nav('home'); return; }
+      state.taken1b = 'taking'; render();
+      setTimeout(function () { state.taken1b = 'taken'; render(); }, 700);
+    },
+    setCaptureMode1c: function (m) { state.captureMode1c = m; render(); },
     setTone: function (t) { state.tone = t; render(); },
     toggleBlock: function (b) {
       var idx = state.activeBlocks.indexOf(b);
